@@ -24,10 +24,17 @@ jobs:
       - name: Install dependencies & Build
         run: |
           npm install
-          npm install @capacitor/core @capacitor/cli @capacitor/android
+          npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/assets
           npx cap init Batte com.example.wardrober --web-dir=dist
           npm run build
           npx cap add android
+
+          # Ensure the source icon matches the default asset generator path
+          cp assets/logo.png assets/icon.png
+
+          # Generate Android mipmap icon densities
+          npx @capacitor/assets generate --android --iconOnly
+
           npx cap sync
 
       - name: Make Gradlew Executable
