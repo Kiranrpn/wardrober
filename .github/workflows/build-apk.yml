@@ -29,11 +29,13 @@ jobs:
           npm run build
           npx cap add android
 
-          # Copy logo to expected icon filename
+          # Duplicate logo into standard icon naming targets
+          cp assets/logo.png assets/icon.png
           cp assets/logo.png assets/icon-only.png
+          cp assets/logo.png assets/icon-foreground.png
 
-          # Correct flag: --icon-only
-          npx @capacitor/assets generate --android --icon-only
+          # Generate icons for Android
+          npx @capacitor/assets generate --android
 
           npx cap sync
 
