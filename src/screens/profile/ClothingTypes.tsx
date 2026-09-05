@@ -3,15 +3,14 @@ import { useToast } from '../../components/toast'
 import { Sheet } from '../../components/ui'
 import { db } from '../../db/db'
 import type { ClothingType, SystemRole } from '../../db/types'
-import { ROLE_LABEL } from '../../db/types'
-import { useClothingTypes, useItems } from '../../lib/hooks'
+import { ROLES } from '../../db/types'
+import { useClothingTypes, useItems, useRoleLabels } from '../../lib/hooks'
 import { ScreenHeader } from '../wardrobe/ScreenHeader'
-
-const ROLES: SystemRole[] = ['TOP', 'BOTTOM', 'INNERWEAR']
 
 export function ClothingTypes() {
   const types = useClothingTypes()
   const items = useItems()
+  const roleLabels = useRoleLabels()
   const toast = useToast()
   const [editing, setEditing] = useState<ClothingType | 'new' | null>(null)
   const [name, setName] = useState('')
@@ -64,7 +63,7 @@ export function ClothingTypes() {
         const list = (types ?? []).filter((t) => t.role === r)
         return (
           <div key={r}>
-            <div className="section-label">{ROLE_LABEL[r]}</div>
+            <div className="section-label">{roleLabels[r]}</div>
             {list.length === 0 ? (
               <div className="card small muted">No types yet.</div>
             ) : (
@@ -114,7 +113,7 @@ export function ClothingTypes() {
                   style={{ justifyContent: 'center' }}
                   onClick={() => setRole(r)}
                 >
-                  {ROLE_LABEL[r]}
+                  {roleLabels[r]}
                 </button>
               ))}
             </div>

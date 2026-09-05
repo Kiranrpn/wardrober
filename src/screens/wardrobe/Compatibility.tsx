@@ -4,7 +4,13 @@ import { ItemRow } from '../../components/ui'
 import { db, updateSettings } from '../../db/db'
 import type { ClothingItem, Compatibility as CompatRecord } from '../../db/types'
 import { pairKey } from '../../db/types'
-import { useCategories, useCompatibility, useItems, useSettings } from '../../lib/hooks'
+import {
+  useCategories,
+  useCompatibility,
+  useItems,
+  useRoleLabels,
+  useSettings,
+} from '../../lib/hooks'
 import { isCompatible, buildCompatibilityIndex } from '../../lib/recommend'
 import { ScreenHeader } from './ScreenHeader'
 
@@ -13,6 +19,7 @@ export function CompatibilityManager() {
   const categories = useCategories()
   const compatibility = useCompatibility()
   const settings = useSettings()
+  const roleLabels = useRoleLabels()
   const toast = useToast()
 
   const [categoryId, setCategoryId] = useState<number | undefined>()
@@ -99,7 +106,8 @@ export function CompatibilityManager() {
           <div className="grow">
             <div style={{ fontWeight: 600 }}>Auto-pair within a category</div>
             <div className="tiny faint">
-              Tops and bottoms that share a category work together unless you rule them out here.
+              {roleLabels.TOP} and {roleLabels.BOTTOM} items that share a category work together unless you
+              rule them out here.
             </div>
           </div>
           <button
@@ -145,7 +153,7 @@ export function CompatibilityManager() {
       </div>
 
       <Column
-        label={`Tops (${selectedTops.length}/${tops.length})`}
+        label={`${roleLabels.TOP} (${selectedTops.length}/${tops.length})`}
         items={tops}
         selected={selectedTops}
         onToggle={(id) =>
@@ -158,7 +166,7 @@ export function CompatibilityManager() {
       />
 
       <Column
-        label={`Bottoms (${selectedBottoms.length}/${bottoms.length})`}
+        label={`${roleLabels.BOTTOM} (${selectedBottoms.length}/${bottoms.length})`}
         items={bottoms}
         selected={selectedBottoms}
         onToggle={(id) =>
@@ -173,7 +181,7 @@ export function CompatibilityManager() {
       <div className="sticky-actions stack tight">
         <div className="tiny faint" style={{ textAlign: 'center' }}>
           {combos === 0
-            ? 'Select tops and bottoms to link or unlink them'
+            ? `Select ${roleLabels.TOP.toLowerCase()} and ${roleLabels.BOTTOM.toLowerCase()} items to link or unlink them`
             : `${combos} combination${combos > 1 ? 's' : ''} selected`}
         </div>
         <div className="row">

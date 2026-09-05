@@ -1,4 +1,4 @@
-import type { ClothingItem, Compatibility, WearEvent } from '../db/types'
+import type { ClothingItem, Compatibility, RoleLabels, WearEvent } from '../db/types'
 import { pairKey } from '../db/types'
 import { todayKey } from './dates'
 
@@ -193,34 +193,47 @@ export function recommendInnerwear(
     .sort((a, b) => b.score - a.score)
 }
 
-export const FAILURE_COPY: Record<Exclude<FailureReason, 'NONE'>, { title: string; body: string }> =
-  {
-    NO_ITEMS: {
-      title: 'Your wardrobe is empty',
-      body: 'Add some clothes to start generating pairs.',
-    },
-    NO_CATEGORIES: {
-      title: 'No categories enabled',
-      body: 'Choose which categories should appear in Today.',
-    },
-    NO_TOPS: {
-      title: 'No tops in this category',
-      body: 'Add a top and assign it to this category.',
-    },
-    NO_BOTTOMS: {
-      title: 'No bottoms in this category',
-      body: 'Add a bottom and assign it to this category.',
-    },
-    ALL_IN_LAUNDRY: {
-      title: 'Everything suitable is in laundry',
-      body: 'Your available wardrobe does not currently contain a suitable pair.',
-    },
-    ALL_IN_REPAIR: {
-      title: 'Everything suitable is under repair',
-      body: 'Your available wardrobe does not currently contain a suitable pair.',
-    },
-    NO_COMPATIBILITY: {
-      title: 'No compatible pair',
-      body: 'Set up your Top + Bottom compatibility to start generating outfits.',
-    },
+/** Copy is built from the user's own role names rather than hardcoded words. */
+export function failureCopy(
+  reason: FailureReason,
+  labels: RoleLabels,
+): { title: string; body: string } | undefined {
+  const top = labels.TOP.toLowerCase()
+  const bottom = labels.BOTTOM.toLowerCase()
+  switch (reason) {
+    case 'NO_ITEMS':
+      return { title: 'Your wardrobe is empty', body: 'Add some clothes to start generating pairs.' }
+    case 'NO_CATEGORIES':
+      return {
+        title: 'No categories enabled',
+        body: 'Choose which categories should appear in Today.',
+      }
+    case 'NO_TOPS':
+      return {
+        title: `No ${top} in this category`,
+        body: `Add a ${top} and assign it to this category.`,
+      }
+    case 'NO_BOTTOMS':
+      return {
+        title: `No ${bottom} in this category`,
+        body: `Add a ${bottom} and assign it to this category.`,
+      }
+    case 'ALL_IN_LAUNDRY':
+      return {
+        title: 'Everything suitable is in laundry',
+        body: 'Your available wardrobe does not currently contain a suitable pair.',
+      }
+    case 'ALL_IN_REPAIR':
+      return {
+        title: 'Everything suitable is under repair',
+        body: 'Your available wardrobe does not currently contain a suitable pair.',
+      }
+    case 'NO_COMPATIBILITY':
+      return {
+        title: 'No compatible pair',
+        body: `Set up your ${labels.TOP} + ${labels.BOTTOM} compatibility to start generating outfits.`,
+      }
+    default:
+      return undefined
   }
+}

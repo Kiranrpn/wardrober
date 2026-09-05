@@ -1,11 +1,21 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
-import type { Category, ClothingItem, ClothingType } from '../db/types'
+import type { Category, ClothingItem, ClothingType, RoleLabels } from '../db/types'
+import { resolveRoleLabels } from '../db/types'
 
 /** Read-only: live queries run in a read-only transaction, so the settings row
  *  is created by seedDefaults() at startup rather than lazily here. */
 export function useSettings() {
   return useLiveQuery(() => db.settings.toCollection().first(), [])
+}
+
+/** Always resolved, so screens never have to fall back on a default themselves. */
+export function useRoleLabels(): RoleLabels {
+  const stored = useLiveQuery(async () => {
+    const s = await db.settings.toCollection().first()
+    return s?.roleLabels ?? {}
+  }, [])
+  return resolveRoleLabels(stored)
 }
 
 export function useCategories(): Category[] | undefined {

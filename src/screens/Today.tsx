@@ -1,19 +1,20 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useToast } from '../components/toast'
-import { Empty, Photo, Sheet, Thumb } from '../components/ui'
-import type { Category, ClothingItem, WearEvent } from '../db/types'
+import { Empty, ItemRow, Photo, Sheet, Thumb } from '../components/ui'
+import type { Category, ClothingItem, RoleLabels, WearEvent } from '../db/types'
 import { relativeDay, todayKey } from '../lib/dates'
 import {
   useCategories,
   useCompatibility,
   useInnerwearEvents,
   useItems,
+  useRoleLabels,
   useSettings,
   useWearEvents,
 } from '../lib/hooks'
-import { FAILURE_COPY, recommendInnerwear, recommendPairs } from '../lib/recommend'
-import { recordInnerwear, recordWear, undoInnerwear, undoWear, WearError } from '../lib/wear'
+import { failureCopy, recommendInnerwear, recommendPairs } from '../lib/recommend'
+import { recordWear, setTodaysInnerwear, undoInnerwear, undoWear, WearError } from '../lib/wear'
 import { LogWhatIWore } from './LogWhatIWore'
 
 export function Today() {
@@ -23,6 +24,7 @@ export function Today() {
   const wearEvents = useWearEvents()
   const innerwearEvents = useInnerwearEvents()
   const settings = useSettings()
+  const roleLabels = useRoleLabels()
   const toast = useToast()
 
   // One cursor and one re-roll seed per category, so re-rolling Lounge does not
@@ -53,6 +55,11 @@ export function Today() {
   const innerwearItem = todaysInnerwearEvent
     ? items?.find((i) => i.id === todaysInnerwearEvent.itemId)
     : undefined
+
+  const innerwearChoices = useMemo(
+    () => (items ?? []).filter((i) => i.role === 'INNERWEAR' && i.state === 'AVAILABLE'),
+    [items],
+  )
 
   const innerwearSuggestion = useMemo(() => {
     if (!items || todaysInnerwearEvent) return undefined
@@ -106,8 +113,8 @@ export function Today() {
 
   async function acceptInnerwear(item: ClothingItem) {
     try {
-      const created = await recordInnerwear(item.id!, 'TODAY_RECOMMENDATION')
-      toast(created ? 'Innerwear logged for today.' : 'Already logged for today.')
+      const changed = await setTodaysInnerwear(item.id!, 'TODAY_RECOMMENDATION')
+      toast(changed ? `${roleLabels.INNERWEAR} set for today.` : 'Already logged for today.')
     } catch {
       toast('Could not record that.', true)
     }
@@ -169,6 +176,7 @@ export function Today() {
                 cursor={cursors[category.id!] ?? 0}
                 seed={seeds[category.id!] ?? 0}
                 busy={busy}
+                roleLabels={roleLabels}
                 onAnother={(optionCount) =>
                   optionCount > 1
                     ? setCursors((c) => ({ ...c, [category.id!]: (c[category.id!] ?? 0) + 1 }))
@@ -180,14 +188,16 @@ export function Today() {
           })}
 
           <InnerwearCard
+            label={roleLabels.INNERWEAR}
             logged={innerwearItem}
             suggestion={innerwearSuggestion}
+            choices={innerwearChoices}
             onAccept={acceptInnerwear}
             onUndo={
               todaysInnerwearEvent
                 ? async () => {
                     await undoInnerwear(todaysInnerwearEvent.id!)
-                    toast('Innerwear cleared.')
+                    toast(`${roleLabels.INNERWEAR} cleared.`)
                   }
                 : undefined
             }
@@ -218,6 +228,7 @@ function RecommendationCard({
   cursor,
   seed,
   busy,
+  roleLabels,
   onAnother,
   onWear,
 }: {
@@ -226,6 +237,7 @@ function RecommendationCard({
   compatibility: Parameters<typeof recommendPairs>[0]['compatibility']
   wearEvents: WearEvent[]
   impliedCompatibility: boolean
+  roleLabels: RoleLabels
   cursor: number
   seed: number
   busy: boolean
@@ -246,7 +258,7 @@ function RecommendationCard({
   }, [items, compatibility, wearEvents, category.id, impliedCompatibility, seed])
 
   if (result.candidates.length === 0) {
-    const copy = FAILURE_COPY[result.reason as keyof typeof FAILURE_COPY]
+    const copy = failureCopy(result.reason, roleLabels)
     return (
       <div className="card stack tight">
         <span className="chip static on">{category.name}</span>
@@ -354,47 +366,81 @@ function PairSlot({ item }: { item: ClothingItem }) {
 }
 
 function InnerwearCard({
+  label,
   logged,
   suggestion,
+  choices,
   onAccept,
   onUndo,
 }: {
+  label: string
   logged?: ClothingItem
   suggestion?: ClothingItem
+  choices: ClothingItem[]
   onAccept: (item: ClothingItem) => void
   onUndo?: () => void
 }) {
-  if (logged) {
+  const [picking, setPicking] = useState(false)
+  const shown = logged ?? suggestion
+
+  if (!shown) {
     return (
+      <div className="card small muted">
+        No {label.toLowerCase()} available. Add inner items or clear some from laundry.
+      </div>
+    )
+  }
+
+  // Anything else available to swap to; the current pick is not an option.
+  const alternatives = choices.filter((i) => i.id !== shown.id)
+
+  return (
+    <>
       <div className="card row small" style={{ alignItems: 'center' }}>
         <span className="grow">
-          <span className="faint">Essentials today · </span>
-          {logged.name}
+          <span className="faint">{label} today · </span>
+          {shown.name}
         </span>
-        {onUndo && (
-          <button className="btn sm ghost" onClick={onUndo}>
-            Undo
+        {alternatives.length > 0 && (
+          <button className="btn sm" onClick={() => setPicking(true)}>
+            Change
+          </button>
+        )}
+        {logged ? (
+          onUndo && (
+            <button className="btn sm ghost" onClick={onUndo}>
+              Undo
+            </button>
+          )
+        ) : (
+          <button className="btn sm primary" onClick={() => onAccept(shown)}>
+            Log
           </button>
         )}
       </div>
-    )
-  }
-  if (!suggestion) {
-    return (
-      <div className="card small muted">
-        No essentials available. Add inner items or clear some from laundry.
-      </div>
-    )
-  }
-  return (
-    <div className="card row small" style={{ alignItems: 'center' }}>
-      <span className="grow">
-        <span className="faint">Essentials today · </span>
-        {suggestion.name}
-      </span>
-      <button className="btn sm primary" onClick={() => onAccept(suggestion)}>
-        Log
-      </button>
-    </div>
+
+      <Sheet open={picking} title={`Choose today's ${label.toLowerCase()}`} onClose={() => setPicking(false)}>
+        <div className="stack tight">
+          {alternatives.map((item) => (
+            <ItemRow
+              key={item.id}
+              item={item}
+              subtitle={`${relativeDay(item.lastWornAt)} · ${item.lifetimeWears} wear${
+                item.lifetimeWears === 1 ? '' : 's'
+              }`}
+              onClick={() => {
+                onAccept(item)
+                setPicking(false)
+              }}
+            />
+          ))}
+          <div className="tiny faint">
+            {logged
+              ? 'Picking one swaps it for today: the current one is put back exactly as it was.'
+              : 'Picking one logs it for today.'}
+          </div>
+        </div>
+      </Sheet>
+    </>
   )
 }

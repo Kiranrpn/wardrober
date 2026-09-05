@@ -90,6 +90,8 @@ export interface Settings {
   setupComplete: boolean
   userName?: string
   theme?: ThemeChoice
+  /** What each system role is called in the UI. The roles themselves never change. */
+  roleLabels?: Partial<Record<SystemRole, string>>
   /** When true, items sharing a category pair automatically unless excluded. */
   impliedCompatibility: boolean
   defaultLaundryThreshold: number
@@ -99,10 +101,23 @@ export interface Settings {
 
 export const pairKey = (topId: number, bottomId: number) => `${topId}:${bottomId}`
 
-export const ROLE_LABEL: Record<SystemRole, string> = {
+export const ROLES: SystemRole[] = ['TOP', 'BOTTOM', 'INNERWEAR']
+
+/** Starting point only. Users rename these in Settings; nothing branches on the text. */
+export const DEFAULT_ROLE_LABELS: Record<SystemRole, string> = {
   TOP: 'Top',
   BOTTOM: 'Bottom',
-  INNERWEAR: 'Innerwear',
+  INNERWEAR: 'Essentials',
+}
+
+export type RoleLabels = Record<SystemRole, string>
+
+export function resolveRoleLabels(stored?: Partial<Record<SystemRole, string>>): RoleLabels {
+  return {
+    TOP: stored?.TOP?.trim() || DEFAULT_ROLE_LABELS.TOP,
+    BOTTOM: stored?.BOTTOM?.trim() || DEFAULT_ROLE_LABELS.BOTTOM,
+    INNERWEAR: stored?.INNERWEAR?.trim() || DEFAULT_ROLE_LABELS.INNERWEAR,
+  }
 }
 
 export const STATE_LABEL: Record<ItemState, string> = {

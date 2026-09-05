@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useToast } from '../../components/toast'
 import { Photo, Sheet, StateBadge } from '../../components/ui'
-import { ROLE_LABEL } from '../../db/types'
 import { formatDate, relativeDay } from '../../lib/dates'
 import {
   useCategories,
@@ -10,6 +9,7 @@ import {
   useInnerwearEvents,
   useItem,
   useItems,
+  useRoleLabels,
   useSettings,
   useWearEvents,
 } from '../../lib/hooks'
@@ -35,6 +35,7 @@ export function ItemDetail() {
   const wearEvents = useWearEvents()
   const innerwearEvents = useInnerwearEvents()
   const settings = useSettings()
+  const roleLabels = useRoleLabels()
   const navigate = useNavigate()
   const toast = useToast()
 
@@ -110,7 +111,7 @@ export function ItemDetail() {
           <div className="stack tight grow">
             <StateBadge state={item.state} />
             <div className="small muted">
-              {ROLE_LABEL[item.role]}
+              {roleLabels[item.role]}
               {type ? ` · ${type.name}` : ''}
             </div>
             <div className="row wrap" style={{ gap: 6 }}>

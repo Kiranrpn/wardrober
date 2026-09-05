@@ -3,9 +3,15 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useToast } from '../../components/toast'
 import { IconSlot } from '../../components/ui'
 import { db } from '../../db/db'
-import type { ClothingItem, SystemRole } from '../../db/types'
-import { ROLE_LABEL } from '../../db/types'
-import { useCategories, useClothingTypes, useItem, useSettings } from '../../lib/hooks'
+import type { ClothingItem } from '../../db/types'
+import { ROLES } from '../../db/types'
+import {
+  useCategories,
+  useClothingTypes,
+  useItem,
+  useRoleLabels,
+  useSettings,
+} from '../../lib/hooks'
 import { compressPhoto } from '../../lib/photo'
 import { ScreenHeader } from './ScreenHeader'
 
@@ -28,6 +34,7 @@ export function ItemForm() {
   const categories = useCategories()
   const types = useClothingTypes()
   const settings = useSettings()
+  const roleLabels = useRoleLabels()
   const navigate = useNavigate()
   const toast = useToast()
   const cameraRef = useRef<HTMLInputElement>(null)
@@ -142,14 +149,14 @@ export function ItemForm() {
         <div className="field">
           <label>Role</label>
           <div className="row">
-            {(['TOP', 'BOTTOM', 'INNERWEAR'] as SystemRole[]).map((r) => (
+            {ROLES.map((r) => (
               <button
                 key={r}
                 className={`chip grow ${current.role === r ? 'on' : ''}`}
                 style={{ justifyContent: 'center' }}
                 onClick={() => patch({ role: r, typeId: undefined })}
               >
-                {ROLE_LABEL[r]}
+                {roleLabels[r]}
               </button>
             ))}
           </div>

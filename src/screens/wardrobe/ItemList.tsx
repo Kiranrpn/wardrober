@@ -4,7 +4,7 @@ import { useToast } from '../../components/toast'
 import { Empty, ItemRow, SearchField, StateBadge } from '../../components/ui'
 import type { ItemState, SystemRole } from '../../db/types'
 import { relativeDay } from '../../lib/dates'
-import { useCategories, useClothingTypes, useItems } from '../../lib/hooks'
+import { useCategories, useClothingTypes, useItems, useRoleLabels } from '../../lib/hooks'
 import { markClean, setItemState } from '../../lib/wear'
 import { ScreenHeader } from './ScreenHeader'
 
@@ -17,6 +17,7 @@ export function ItemList({ state, title }: Props) {
   const items = useItems()
   const categories = useCategories()
   const types = useClothingTypes()
+  const roleLabels = useRoleLabels()
   const navigate = useNavigate()
   const toast = useToast()
   const [params, setParams] = useSearchParams()
@@ -78,7 +79,7 @@ export function ItemList({ state, title }: Props) {
             className={`chip ${role === r ? 'on' : ''}`}
             onClick={() => setRole(r)}
           >
-            {r === 'ALL' ? 'All' : r === 'TOP' ? 'Tops' : r === 'BOTTOM' ? 'Bottoms' : 'Innerwear'}
+            {r === 'ALL' ? 'All' : roleLabels[r]}
           </button>
         ))}
         {activeCategory && (

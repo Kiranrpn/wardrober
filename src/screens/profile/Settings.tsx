@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { useToast } from '../../components/toast'
 import { Sheet } from '../../components/ui'
 import { db, resetSeedGuard, seedDefaults, updateSettings } from '../../db/db'
-import type { ThemeChoice } from '../../db/types'
-import { useSettings } from '../../lib/hooks'
+import type { SystemRole, ThemeChoice } from '../../db/types'
+import { DEFAULT_ROLE_LABELS, ROLES } from '../../db/types'
+import { useRoleLabels, useSettings } from '../../lib/hooks'
 import { ScreenHeader } from '../wardrobe/ScreenHeader'
 
 const CURRENCIES = ['₹', '$', '£', '€', '¥']
@@ -14,12 +15,23 @@ const THEMES: Array<{ value: ThemeChoice; label: string }> = [
   { value: 'dark', label: 'Dark' },
 ]
 
+const ROLE_HINT: Record<SystemRole, string> = {
+  TOP: 'The upper half of a pair.',
+  BOTTOM: 'The lower half of a pair.',
+  INNERWEAR: 'Tracked on its own, one record a day.',
+}
+
 export function Settings() {
   const settings = useSettings()
+  const roleLabels = useRoleLabels()
   const toast = useToast()
   const [confirmReset, setConfirmReset] = useState(false)
 
   if (!settings) return <div className="screen" />
+
+  /** Stores the name only; the underlying role and all its behaviour are untouched. */
+  const renameRole = (role: SystemRole, value: string) =>
+    updateSettings({ roleLabels: { ...settings.roleLabels, [role]: value } })
 
   async function reset() {
     await db.transaction(
@@ -75,6 +87,31 @@ export function Settings() {
         </div>
 
         <div className="field">
+          <label>What you call things</label>
+          <div className="tiny faint" style={{ marginBottom: 2 }}>
+            Rename these to suit you. Only the wording changes; how the app pairs and tracks
+            clothes stays exactly the same.
+          </div>
+          {ROLES.map((r) => (
+            <div className="row" key={r} style={{ alignItems: 'center' }}>
+              <input
+                className="input grow"
+                value={settings.roleLabels?.[r] ?? ''}
+                placeholder={DEFAULT_ROLE_LABELS[r]}
+                aria-label={`Name for ${DEFAULT_ROLE_LABELS[r]}`}
+                onChange={(e) => renameRole(r, e.target.value)}
+              />
+              <span className="tiny faint" style={{ flex: '0 0 42%' }}>
+                {ROLE_HINT[r]}
+              </span>
+            </div>
+          ))}
+          <div className="tiny faint">
+            Showing as: {roleLabels.TOP} · {roleLabels.BOTTOM} · {roleLabels.INNERWEAR}
+          </div>
+        </div>
+
+        <div className="field">
           <label>Currency</label>
           <div className="row">
             {CURRENCIES.map((c) => (
@@ -107,7 +144,8 @@ export function Settings() {
             <div className="grow">
               <div style={{ fontWeight: 600 }}>Auto-pair within a category</div>
               <div className="tiny faint">
-                Off means every top and bottom combination must be linked by hand.
+                Off means every {roleLabels.TOP.toLowerCase()} and{' '}
+                {roleLabels.BOTTOM.toLowerCase()} combination must be linked by hand.
               </div>
             </div>
             <button

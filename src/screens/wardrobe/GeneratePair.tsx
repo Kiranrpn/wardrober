@@ -4,8 +4,15 @@ import { useToast } from '../../components/toast'
 import { Empty, Photo } from '../../components/ui'
 import type { ClothingItem } from '../../db/types'
 import { relativeDay } from '../../lib/dates'
-import { useCategories, useCompatibility, useItems, useSettings, useWearEvents } from '../../lib/hooks'
-import { FAILURE_COPY, recommendPairs } from '../../lib/recommend'
+import {
+  useCategories,
+  useCompatibility,
+  useItems,
+  useRoleLabels,
+  useSettings,
+  useWearEvents,
+} from '../../lib/hooks'
+import { failureCopy, recommendPairs } from '../../lib/recommend'
 import { recordWear, WearError } from '../../lib/wear'
 import { ScreenHeader } from './ScreenHeader'
 
@@ -15,6 +22,7 @@ export function GeneratePair() {
   const compatibility = useCompatibility()
   const wearEvents = useWearEvents()
   const settings = useSettings()
+  const roleLabels = useRoleLabels()
   const toast = useToast()
 
   const [categoryId, setCategoryId] = useState<number | undefined>()
@@ -107,11 +115,9 @@ export function GeneratePair() {
           </div>
         ) : (
           <Empty
-            title={
-              FAILURE_COPY[result!.reason as keyof typeof FAILURE_COPY]?.title ?? 'No pair available'
-            }
+            title={failureCopy(result!.reason, roleLabels)?.title ?? 'No pair available'}
             body={
-              FAILURE_COPY[result!.reason as keyof typeof FAILURE_COPY]?.body ??
+              failureCopy(result!.reason, roleLabels)?.body ??
               'There is no available compatible pair in this category.'
             }
             action={
