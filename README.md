@@ -1,4 +1,4 @@
-# Wardrober
+# Batte
 
 Configure the wardrobe once. Let the app handle the rotation.
 
@@ -88,15 +88,17 @@ everything locally, so it wraps into a native shell without code changes:
 
 ```bash
 npm install @capacitor/core @capacitor/cli @capacitor/ios @capacitor/android
-npx cap init Wardrober com.example.wardrober --web-dir=dist
+npx cap init Batte com.example.wardrober --web-dir=dist
 npm run build && npx cap add ios && npx cap add android && npx cap sync
 ```
 
 Adding an item offers both **Take photo** (an input with `capture="environment"`, which
 opens the camera directly) and **Choose from device** (no `capture`, so the phone offers
-the gallery and any file provider). Items without a photo show an emoji you pick from a
-list, or a default glyph for their role. For a native picker later, swap
-`src/lib/photo.ts` to `@capacitor/camera`; it is the only place image capture is handled.
+the gallery and any file provider). Tapping the picture slot itself focuses a hidden text
+field, so the device's own keyboard and emoji picker open: there is no in-app emoji list
+to fall behind the platform's. An item with neither photo nor emoji shows the first letter
+of its name. For a native picker later, swap `src/lib/photo.ts` to `@capacitor/camera`; it
+is the only place image capture is handled.
 
 ## Layout
 

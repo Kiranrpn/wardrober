@@ -25,7 +25,7 @@ jobs:
         run: |
           npm install
           npm install @capacitor/core @capacitor/cli @capacitor/android
-          npx cap init Wardrober com.example.wardrober --web-dir=dist
+          npx cap init Batte com.example.wardrober --web-dir=dist
           npm run build
           npx cap add android
           npx cap sync

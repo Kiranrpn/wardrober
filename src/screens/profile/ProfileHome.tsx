@@ -39,7 +39,7 @@ export function ProfileHome() {
       </div>
 
       <div className="credit">
-        <div className="name">Wardrober</div>
+        <div className="name">Batte</div>
         <div className="by">Made by Kiran</div>
       </div>
     </div>

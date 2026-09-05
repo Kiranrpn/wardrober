@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useToast } from '../../components/toast'
-import { IconPicker, Photo } from '../../components/ui'
+import { IconSlot } from '../../components/ui'
 import { db } from '../../db/db'
 import type { ClothingItem, SystemRole } from '../../db/types'
 import { ROLE_LABEL } from '../../db/types'
@@ -91,18 +91,23 @@ export function ItemForm() {
       <div className="stack">
         <div className="row" style={{ alignItems: 'flex-start' }}>
           <div style={{ width: 128, flex: 'none' }}>
-            <Photo item={{ ...draft, id: 0, createdAt: 0, updatedAt: 0 }} />
+            <IconSlot item={current} onChange={(icon) => patch({ icon })} />
           </div>
           <div className="stack tight grow">
             <button className="btn sm" onClick={() => cameraRef.current?.click()}>
               📷 Take photo
             </button>
             <button className="btn sm" onClick={() => galleryRef.current?.click()}>
-              🖼 Choose from device
+              Choose from device
             </button>
             {current.photo && (
               <button className="btn sm ghost danger" onClick={() => patch({ photo: undefined })}>
                 Remove photo
+              </button>
+            )}
+            {current.icon && (
+              <button className="btn sm ghost" onClick={() => patch({ icon: undefined })}>
+                Use first letter
               </button>
             )}
             {/* `capture` opens the camera directly; the second input omits it so the
@@ -123,15 +128,6 @@ export function ItemForm() {
               onChange={(e) => pickPhoto(e.target.files?.[0])}
             />
           </div>
-        </div>
-
-        <div className="field">
-          <label>Icon {current.photo ? '(shown only if you remove the photo)' : ''}</label>
-          <IconPicker
-            role={current.role}
-            value={current.icon}
-            onChange={(icon) => patch({ icon })}
-          />
         </div>
 
         <div className="field">

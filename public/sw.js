@@ -1,4 +1,4 @@
-const CACHE = 'wardrober-v1'
+const CACHE = 'batte-v2'
 
 self.addEventListener('install', (event) => {
   self.skipWaiting()

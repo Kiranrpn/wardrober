@@ -1,26 +1,27 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import type { ClothingItem, ItemState, SystemRole } from '../db/types'
+import type { ClothingItem, ItemState } from '../db/types'
 import { STATE_LABEL } from '../db/types'
 import { blobUrl } from '../lib/photo'
 
-const ROLE_GLYPH: Record<SystemRole, string> = {
-  TOP: '👕',
-  BOTTOM: '👖',
-  INNERWEAR: '🩲',
+/** Photo wins; then the chosen emoji; then the first letter of the item's name. */
+function itemGlyph(item?: { icon?: string; name?: string }): string {
+  if (item?.icon) return item.icon
+  const initial = item?.name?.trim().charAt(0)
+  return initial ? initial.toUpperCase() : '?'
 }
 
-/** Photo wins; then the item's chosen emoji; then a glyph for its role. */
-const fallbackGlyph = (item?: ClothingItem) => item?.icon ?? ROLE_GLYPH[item?.role ?? 'TOP']
+const isLetter = (glyph: string) => /^[\p{L}\p{N}?]$/u.test(glyph)
 
 export function Photo({ item, className }: { item?: ClothingItem; className?: string }) {
   const url = blobUrl(item?.photo)
+  const glyph = itemGlyph(item)
   return (
     <div className={`photo ${className ?? ''}`}>
       {url ? (
         <img src={url} alt={item?.name ?? ''} />
       ) : (
-        <span className="glyph">{fallbackGlyph(item)}</span>
+        <span className={`glyph ${isLetter(glyph) ? 'letter' : ''}`}>{glyph}</span>
       )}
     </div>
   )
@@ -28,47 +29,58 @@ export function Photo({ item, className }: { item?: ClothingItem; className?: st
 
 export function Thumb({ item }: { item?: ClothingItem }) {
   const url = blobUrl(item?.photo)
+  const glyph = itemGlyph(item)
   return (
     <div className="thumb">
-      {url ? <img src={url} alt={item?.name ?? ''} /> : <span>{fallbackGlyph(item)}</span>}
+      {url ? (
+        <img src={url} alt={item?.name ?? ''} />
+      ) : (
+        <span className={isLetter(glyph) ? 'letter' : ''}>{glyph}</span>
+      )}
     </div>
   )
 }
 
-const ICONS_BY_ROLE: Record<SystemRole, string[]> = {
-  TOP: ['👕', '👔', '🧥', '👚', '🥻', '🧣', '🥼', '🦺', '🎽', '👘', '🩱', '🧶', '✨', '🌙'],
-  BOTTOM: ['👖', '🩳', '👗', '🥿', '🧵', '🪡', '🏃', '🧘', '🌊', '🔥', '⭐', '🌿', '🎯', '🎨'],
-  INNERWEAR: ['🩲', '🧦', '🩴', '🤍', '🖤', '💙', '❤️', '💛', '💚', '💜', '🤎', '🩶', '1️⃣', '2️⃣'],
+/** Keeps only the last grapheme, so a multi-codepoint emoji survives intact
+ *  and typing replaces the icon rather than appending to it. */
+function lastGrapheme(value: string): string | undefined {
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
+    const parts = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(trimmed)]
+    return parts.at(-1)?.segment
+  }
+  return [...trimmed].at(-1)
 }
 
-export function IconPicker({
-  role,
-  value,
+/** The item's picture slot, doubling as the icon field. Tapping it focuses a
+ *  transparent input so the device's own keyboard (and its emoji picker) opens;
+ *  there is no in-app emoji list to keep in sync with the platform. */
+export function IconSlot({
+  item,
   onChange,
 }: {
-  role: SystemRole
-  value?: string
+  item: { icon?: string; name?: string; photo?: Blob }
   onChange: (icon: string | undefined) => void
 }) {
+  const ref = useRef<HTMLInputElement>(null)
+  const url = blobUrl(item.photo)
+  const glyph = itemGlyph(item)
+
   return (
-    <div className="emoji-grid">
-      <button
-        type="button"
-        className={`none ${value === undefined ? 'on' : ''}`}
-        onClick={() => onChange(undefined)}
-      >
-        NONE
-      </button>
-      {ICONS_BY_ROLE[role].map((emoji) => (
-        <button
-          type="button"
-          key={emoji}
-          className={value === emoji ? 'on' : ''}
-          onClick={() => onChange(emoji)}
-        >
-          {emoji}
-        </button>
-      ))}
+    <div className="photo icon-slot" onClick={() => ref.current?.focus()}>
+      {url ? (
+        <img src={url} alt={item.name ?? ''} />
+      ) : (
+        <span className={`glyph ${isLetter(glyph) ? 'letter' : ''}`}>{glyph}</span>
+      )}
+      <input
+        ref={ref}
+        value={item.icon ?? ''}
+        aria-label="Item icon"
+        onChange={(e) => onChange(lastGrapheme(e.target.value))}
+      />
+      {!url && <span className="hint">Tap to pick an emoji</span>}
     </div>
   )
 }

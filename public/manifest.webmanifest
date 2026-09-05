@@ -1,6 +1,6 @@
 {
-  "name": "Wardrober",
-  "short_name": "Wardrober",
+  "name": "Batte",
+  "short_name": "Batte",
   "description": "Configure the wardrobe once. Let the app handle the rotation.",
   "start_url": "./",
   "scope": "./",
