@@ -40,7 +40,7 @@ export function ProfileHome() {
 
       <div className="credit">
         <div className="name">Batte</div>
-        <div className="by">Made with love by Kiran❤️</div>
+        <div className="by">Made with ❤️<br />by Kiran</div>
       </div>
     </div>
   )
