@@ -18,7 +18,7 @@ const THEMES: Array<{ value: ThemeChoice; label: string }> = [
 const ROLE_HINT: Record<SystemRole, string> = {
   TOP: 'The upper half of a pair.',
   BOTTOM: 'The lower half of a pair.',
-  INNERWEAR: 'Tracked on its own, one record a day.',
+  INNERWEAR: 'Innerwears & under-garments.',
 }
 
 export function Settings() {
