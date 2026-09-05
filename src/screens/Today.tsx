@@ -368,7 +368,7 @@ function InnerwearCard({
     return (
       <div className="card row small" style={{ alignItems: 'center' }}>
         <span className="grow">
-          <span className="faint">Innerwear today · </span>
+          <span className="faint">Essentials today · </span>
           {logged.name}
         </span>
         {onUndo && (
@@ -382,14 +382,14 @@ function InnerwearCard({
   if (!suggestion) {
     return (
       <div className="card small muted">
-        No innerwear available. Add innerwear items or clear some from laundry.
+        No essentials available. Add inner items or clear some from laundry.
       </div>
     )
   }
   return (
     <div className="card row small" style={{ alignItems: 'center' }}>
       <span className="grow">
-        <span className="faint">Innerwear today · </span>
+        <span className="faint">Essentials today · </span>
         {suggestion.name}
       </span>
       <button className="btn sm primary" onClick={() => onAccept(suggestion)}>
