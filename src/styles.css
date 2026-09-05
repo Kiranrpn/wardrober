@@ -70,6 +70,11 @@ textarea {
   color: inherit;
 }
 
+/* Backstop: a photo can never break its container, whatever wraps it. */
+img {
+  max-width: 100%;
+}
+
 h1,
 h2,
 h3,
@@ -436,7 +441,10 @@ h4 {
   width: 100%;
 }
 
-.item-row .thumb {
+/* Not scoped to .item-row: <Thumb> is also used in the pickers, the worn-today
+   card and the import screen, and an unsized box lets the photo render at its
+   natural pixel size. */
+.thumb {
   width: 46px;
   height: 58px;
   flex: none;
@@ -449,10 +457,11 @@ h4 {
   font-size: 18px;
 }
 
-.item-row .thumb img {
+.thumb img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  display: block;
 }
 
 .item-row .body {
