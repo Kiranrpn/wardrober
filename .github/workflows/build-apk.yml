@@ -29,11 +29,11 @@ jobs:
           npm run build
           npx cap add android
 
-          # Ensure the source icon matches the default asset generator path
-          cp assets/logo.png assets/icon.png
+          # Copy logo to expected icon filename
+          cp assets/logo.png assets/icon-only.png
 
-          # Generate Android mipmap icon densities
-          npx @capacitor/assets generate --android --iconOnly
+          # Correct flag: --icon-only
+          npx @capacitor/assets generate --android --icon-only
 
           npx cap sync
 
