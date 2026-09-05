@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useToast } from '../../components/toast'
-import { Photo } from '../../components/ui'
+import { IconPicker, Photo } from '../../components/ui'
 import { db } from '../../db/db'
 import type { ClothingItem, SystemRole } from '../../db/types'
 import { ROLE_LABEL } from '../../db/types'
@@ -30,10 +30,12 @@ export function ItemForm() {
   const settings = useSettings()
   const navigate = useNavigate()
   const toast = useToast()
-  const fileRef = useRef<HTMLInputElement>(null)
+  const cameraRef = useRef<HTMLInputElement>(null)
+  const galleryRef = useRef<HTMLInputElement>(null)
 
   const [draft, setDraft] = useState<Draft | null>(null)
   const [showOptional, setShowOptional] = useState(false)
+  const [showTracking, setShowTracking] = useState(false)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -92,23 +94,44 @@ export function ItemForm() {
             <Photo item={{ ...draft, id: 0, createdAt: 0, updatedAt: 0 }} />
           </div>
           <div className="stack tight grow">
-            <button className="btn sm" onClick={() => fileRef.current?.click()}>
-              {current.photo ? 'Replace photo' : 'Add photo'}
+            <button className="btn sm" onClick={() => cameraRef.current?.click()}>
+              📷 Take photo
+            </button>
+            <button className="btn sm" onClick={() => galleryRef.current?.click()}>
+              🖼 Choose from device
             </button>
             {current.photo && (
               <button className="btn sm ghost danger" onClick={() => patch({ photo: undefined })}>
                 Remove photo
               </button>
             )}
+            {/* `capture` opens the camera directly; the second input omits it so the
+                phone offers the gallery and any file provider instead. */}
             <input
-              ref={fileRef}
+              ref={cameraRef}
               type="file"
               accept="image/*"
               capture="environment"
               hidden
               onChange={(e) => pickPhoto(e.target.files?.[0])}
             />
+            <input
+              ref={galleryRef}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(e) => pickPhoto(e.target.files?.[0])}
+            />
           </div>
+        </div>
+
+        <div className="field">
+          <label>Icon {current.photo ? '(shown only if you remove the photo)' : ''}</label>
+          <IconPicker
+            role={current.role}
+            value={current.icon}
+            onChange={(icon) => patch({ icon })}
+          />
         </div>
 
         <div className="field">
@@ -242,6 +265,47 @@ export function ItemForm() {
               />
             </div>
           </div>
+        )}
+
+        {itemId !== undefined && (
+          <>
+            <button className="link" onClick={() => setShowTracking((v) => !v)}>
+              {showTracking ? 'Hide' : 'Show'} tracking numbers
+            </button>
+            {showTracking && (
+              <div className="stack tight">
+                <div className="grid-2">
+                  <div className="field">
+                    <label>Lifetime wears</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={current.lifetimeWears}
+                      onChange={(e) =>
+                        patch({ lifetimeWears: Math.max(0, Number(e.target.value) || 0) })
+                      }
+                    />
+                  </div>
+                  <div className="field">
+                    <label>Wears since wash</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={current.wearsSinceLaundry}
+                      onChange={(e) =>
+                        patch({ wearsSinceLaundry: Math.max(0, Number(e.target.value) || 0) })
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="card tiny muted">
+                  Typing a number here overrides the count without touching the wear history, so
+                  the two can disagree. To correct a specific mistake, delete that wear from the
+                  item's history instead: everything recalculates from what is left.
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         <div className="sticky-actions">

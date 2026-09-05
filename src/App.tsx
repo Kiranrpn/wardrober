@@ -3,6 +3,7 @@ import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { ToastProvider } from './components/toast'
 import { seedDefaults } from './db/db'
 import { useSettings } from './lib/hooks'
+import { applyTheme } from './lib/theme'
 import { Onboarding } from './screens/Onboarding'
 import { Today } from './screens/Today'
 import { Categories } from './screens/profile/Categories'
@@ -34,6 +35,8 @@ export default function App() {
   useEffect(() => {
     seedDefaults().then(() => setReady(true))
   }, [])
+
+  useEffect(() => applyTheme(settings?.theme ?? 'system'), [settings?.theme])
 
   useEffect(() => {
     window.scrollTo(0, 0)

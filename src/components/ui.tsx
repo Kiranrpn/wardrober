@@ -10,6 +10,9 @@ const ROLE_GLYPH: Record<SystemRole, string> = {
   INNERWEAR: '🩲',
 }
 
+/** Photo wins; then the item's chosen emoji; then a glyph for its role. */
+const fallbackGlyph = (item?: ClothingItem) => item?.icon ?? ROLE_GLYPH[item?.role ?? 'TOP']
+
 export function Photo({ item, className }: { item?: ClothingItem; className?: string }) {
   const url = blobUrl(item?.photo)
   return (
@@ -17,7 +20,7 @@ export function Photo({ item, className }: { item?: ClothingItem; className?: st
       {url ? (
         <img src={url} alt={item?.name ?? ''} />
       ) : (
-        <span className="glyph">{ROLE_GLYPH[item?.role ?? 'TOP']}</span>
+        <span className="glyph">{fallbackGlyph(item)}</span>
       )}
     </div>
   )
@@ -27,7 +30,72 @@ export function Thumb({ item }: { item?: ClothingItem }) {
   const url = blobUrl(item?.photo)
   return (
     <div className="thumb">
-      {url ? <img src={url} alt={item?.name ?? ''} /> : <span>{ROLE_GLYPH[item?.role ?? 'TOP']}</span>}
+      {url ? <img src={url} alt={item?.name ?? ''} /> : <span>{fallbackGlyph(item)}</span>}
+    </div>
+  )
+}
+
+const ICONS_BY_ROLE: Record<SystemRole, string[]> = {
+  TOP: ['👕', '👔', '🧥', '👚', '🥻', '🧣', '🥼', '🦺', '🎽', '👘', '🩱', '🧶', '✨', '🌙'],
+  BOTTOM: ['👖', '🩳', '👗', '🥿', '🧵', '🪡', '🏃', '🧘', '🌊', '🔥', '⭐', '🌿', '🎯', '🎨'],
+  INNERWEAR: ['🩲', '🧦', '🩴', '🤍', '🖤', '💙', '❤️', '💛', '💚', '💜', '🤎', '🩶', '1️⃣', '2️⃣'],
+}
+
+export function IconPicker({
+  role,
+  value,
+  onChange,
+}: {
+  role: SystemRole
+  value?: string
+  onChange: (icon: string | undefined) => void
+}) {
+  return (
+    <div className="emoji-grid">
+      <button
+        type="button"
+        className={`none ${value === undefined ? 'on' : ''}`}
+        onClick={() => onChange(undefined)}
+      >
+        NONE
+      </button>
+      {ICONS_BY_ROLE[role].map((emoji) => (
+        <button
+          type="button"
+          key={emoji}
+          className={value === emoji ? 'on' : ''}
+          onClick={() => onChange(emoji)}
+        >
+          {emoji}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+export function SearchField({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+}) {
+  return (
+    <div className="search">
+      <span className="glass">🔍</span>
+      <input
+        type="search"
+        value={value}
+        placeholder={placeholder ?? 'Search'}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {value && (
+        <button className="clear" onClick={() => onChange('')} aria-label="Clear search">
+          ✕
+        </button>
+      )}
     </div>
   )
 }

@@ -99,6 +99,71 @@ export async function recordInnerwear(
   })
 }
 
+/** Reverses one item's share of a wear: decrement counts, recompute last-worn
+ *  from the events that remain, and lift it back out of laundry if this wear is
+ *  what pushed it there. Recomputing rather than remembering keeps the item
+ *  honest no matter which event was removed. */
+async function reverseWear(itemId: number, ignoreEventId: number) {
+  const item = await db.items.get(itemId)
+  if (!item) return
+
+  const remaining = (
+    await db.wearEvents.where('topId').equals(itemId).toArray()
+  ).concat(await db.wearEvents.where('bottomId').equals(itemId).toArray())
+  const others = remaining.filter((e) => e.id !== ignoreEventId)
+
+  const wearsSinceLaundry = Math.max(0, item.wearsSinceLaundry - 1)
+  const freedFromLaundry =
+    item.state === 'LAUNDRY' && item.laundryThreshold > 0 && wearsSinceLaundry < item.laundryThreshold
+
+  await db.items.update(itemId, {
+    lifetimeWears: Math.max(0, item.lifetimeWears - 1),
+    wearsSinceLaundry,
+    lastWornAt: others.length > 0 ? Math.max(...others.map((e) => e.timestamp)) : undefined,
+    state: freedFromLaundry ? 'AVAILABLE' : item.state,
+    updatedAt: Date.now(),
+  })
+}
+
+/** Undoes a recorded wear completely. Used by Today's Cancel and Generate again,
+ *  and by deleting a wrong entry from an item's history. */
+export async function undoWear(eventId: number) {
+  return db.transaction('rw', db.items, db.wearEvents, async () => {
+    const event = await db.wearEvents.get(eventId)
+    if (!event) return
+    await reverseWear(event.topId, eventId)
+    await reverseWear(event.bottomId, eventId)
+    await db.wearEvents.delete(eventId)
+  })
+}
+
+export async function undoInnerwear(eventId: number) {
+  return db.transaction('rw', db.items, db.innerwearEvents, async () => {
+    const event = await db.innerwearEvents.get(eventId)
+    if (!event) return
+    const item = await db.items.get(event.itemId)
+    await db.innerwearEvents.delete(eventId)
+    if (!item) return
+
+    const others = (await db.innerwearEvents.where('itemId').equals(event.itemId).toArray()).filter(
+      (e) => e.id !== eventId,
+    )
+    const wearsSinceLaundry = Math.max(0, item.wearsSinceLaundry - 1)
+    const freedFromLaundry =
+      item.state === 'LAUNDRY' &&
+      item.laundryThreshold > 0 &&
+      wearsSinceLaundry < item.laundryThreshold
+
+    await db.items.update(event.itemId, {
+      lifetimeWears: Math.max(0, item.lifetimeWears - 1),
+      wearsSinceLaundry,
+      lastWornAt: others.length > 0 ? Math.max(...others.map((e) => e.timestamp)) : undefined,
+      state: freedFromLaundry ? 'AVAILABLE' : item.state,
+      updatedAt: Date.now(),
+    })
+  })
+}
+
 export async function markClean(itemId: number) {
   await db.items.update(itemId, {
     state: 'AVAILABLE',

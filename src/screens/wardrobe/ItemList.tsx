@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useToast } from '../../components/toast'
-import { Empty, ItemRow, StateBadge } from '../../components/ui'
+import { Empty, ItemRow, SearchField, StateBadge } from '../../components/ui'
 import type { ItemState, SystemRole } from '../../db/types'
 import { relativeDay } from '../../lib/dates'
-import { useCategories, useItems } from '../../lib/hooks'
+import { useCategories, useClothingTypes, useItems } from '../../lib/hooks'
 import { markClean, setItemState } from '../../lib/wear'
 import { ScreenHeader } from './ScreenHeader'
 
@@ -16,10 +16,12 @@ interface Props {
 export function ItemList({ state, title }: Props) {
   const items = useItems()
   const categories = useCategories()
+  const types = useClothingTypes()
   const navigate = useNavigate()
   const toast = useToast()
   const [params, setParams] = useSearchParams()
   const [role, setRole] = useState<SystemRole | 'ALL'>('ALL')
+  const [query, setQuery] = useState('')
 
   const categoryParam = params.get('category')
   const categoryId = categoryParam ? Number(categoryParam) : undefined
@@ -29,8 +31,23 @@ export function ItemList({ state, title }: Props) {
     list = state ? list.filter((i) => i.state === state) : list.filter((i) => i.state !== 'RETIRED')
     if (categoryId !== undefined) list = list.filter((i) => i.categoryIds.includes(categoryId))
     if (role !== 'ALL') list = list.filter((i) => i.role === role)
+
+    // Search spans the fields you would actually remember an item by, not just its name.
+    const q = query.trim().toLowerCase()
+    if (q) {
+      const typeName = (id?: number) => types?.find((t) => t.id === id)?.name ?? ''
+      const catNames = (ids: number[]) =>
+        ids.map((id) => categories?.find((c) => c.id === id)?.name ?? '').join(' ')
+      list = list.filter((i) =>
+        [i.name, i.brand, i.color, i.material, i.size, i.notes, typeName(i.typeId), catNames(i.categoryIds)]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(q),
+      )
+    }
     return [...list].sort((a, b) => a.name.localeCompare(b.name))
-  }, [items, state, categoryId, role])
+  }, [items, state, categoryId, role, query, types, categories])
 
   const activeCategory = categories?.find((c) => c.id === categoryId)
 
@@ -47,6 +64,12 @@ export function ItemList({ state, title }: Props) {
   return (
     <div className="screen">
       <ScreenHeader title={activeCategory ? activeCategory.name : title} />
+
+      <SearchField
+        value={query}
+        onChange={setQuery}
+        placeholder="Search name, brand, colour, category"
+      />
 
       <div className="scroller" style={{ marginBottom: 14 }}>
         {(['ALL', 'TOP', 'BOTTOM', 'INNERWEAR'] as const).map((r) => (
@@ -73,9 +96,11 @@ export function ItemList({ state, title }: Props) {
 
       {filtered.length === 0 ? (
         <Empty
-          title="Nothing here"
+          title={query ? `Nothing matches "${query}"` : 'Nothing here'}
           body={
-            state === 'LAUNDRY'
+            query
+              ? 'Try a different word, or clear the search.'
+              : state === 'LAUNDRY'
               ? 'Nothing is waiting to be washed.'
               : state === 'REPAIR'
                 ? 'Nothing is under repair.'
@@ -84,10 +109,16 @@ export function ItemList({ state, title }: Props) {
                   : 'Add clothing to fill your wardrobe.'
           }
           action={
-            !state && (
-              <Link className="btn primary" to="/wardrobe/add">
-                + Add clothing
-              </Link>
+            query ? (
+              <button className="btn" onClick={() => setQuery('')}>
+                Clear search
+              </button>
+            ) : (
+              !state && (
+                <Link className="btn primary" to="/wardrobe/add">
+                  + Add clothing
+                </Link>
+              )
             )
           }
         />

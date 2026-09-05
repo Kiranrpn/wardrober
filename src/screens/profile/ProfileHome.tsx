@@ -1,9 +1,10 @@
 import { Link } from 'react-router-dom'
-import { useCategories, useItems } from '../../lib/hooks'
+import { useCategories, useItems, useSettings } from '../../lib/hooks'
 
 export function ProfileHome() {
   const categories = useCategories()
   const items = useItems()
+  const settings = useSettings()
 
   const todayCount = (categories ?? []).filter((c) => c.includedInToday).length
 
@@ -11,8 +12,8 @@ export function ProfileHome() {
     <div className="screen">
       <div className="topbar">
         <div className="grow">
-          <h1>Profile</h1>
-          <div className="sub">Set it up once</div>
+          <h1>{settings?.userName || 'Profile'}</h1>
+          <div className="sub">{settings?.userName ? 'Your wardrobe setup' : 'Set it up once'}</div>
         </div>
       </div>
 
@@ -35,6 +36,11 @@ export function ProfileHome() {
       <div className="section-label">App</div>
       <div className="stack tight">
         <Tile to="/profile/settings" label="Settings" />
+      </div>
+
+      <div className="credit">
+        <div className="name">Wardrober</div>
+        <div className="by">Made by Kiran</div>
       </div>
     </div>
   )

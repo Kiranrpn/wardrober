@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useToast } from '../components/toast'
-import { Empty, Photo, Sheet, StateBadge } from '../components/ui'
-import type { ClothingItem } from '../db/types'
+import { Empty, Photo, Sheet, Thumb } from '../components/ui'
+import type { Category, ClothingItem, WearEvent } from '../db/types'
 import { relativeDay, todayKey } from '../lib/dates'
 import {
   useCategories,
@@ -13,7 +13,7 @@ import {
   useWearEvents,
 } from '../lib/hooks'
 import { FAILURE_COPY, recommendInnerwear, recommendPairs } from '../lib/recommend'
-import { recordInnerwear, recordWear, WearError } from '../lib/wear'
+import { recordInnerwear, recordWear, undoInnerwear, undoWear, WearError } from '../lib/wear'
 import { LogWhatIWore } from './LogWhatIWore'
 
 export function Today() {
@@ -25,54 +25,50 @@ export function Today() {
   const settings = useSettings()
   const toast = useToast()
 
-  const [cursor, setCursor] = useState(0)
-  const [seed, setSeed] = useState(0)
+  // One cursor and one re-roll seed per category, so re-rolling Lounge does not
+  // disturb the pair already on offer for Work.
+  const [cursors, setCursors] = useState<Record<number, number>>({})
+  const [seeds, setSeeds] = useState<Record<number, number>>({})
   const [logging, setLogging] = useState(false)
   const [busy, setBusy] = useState(false)
 
-  const todayCategoryIds = useMemo(
-    () => (categories ?? []).filter((c) => c.includedInToday).map((c) => c.id!),
+  const today = todayKey()
+  const todayCategories = useMemo(
+    () => (categories ?? []).filter((c) => c.includedInToday),
     [categories],
   )
 
-  const result = useMemo(() => {
-    if (!items || !compatibility || !wearEvents || !settings) return null
-    void seed
-    return recommendPairs({
-      items,
-      compatibility,
-      wearEvents,
-      categoryIds: todayCategoryIds,
-      impliedCompatibility: settings.impliedCompatibility,
-      penaliseCategoriesUsedToday: true,
-    })
-    // `seed` deliberately re-rolls the ranking when the user asks for another pair.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, compatibility, wearEvents, settings, todayCategoryIds, seed])
+  const wornTodayByCategory = useMemo(() => {
+    const map = new Map<number, WearEvent>()
+    for (const e of wearEvents ?? []) {
+      if (e.date === today && e.categoryId !== undefined && !map.has(e.categoryId)) {
+        map.set(e.categoryId, e)
+      }
+    }
+    return map
+  }, [wearEvents, today])
 
-  const today = todayKey()
-  const todaysInnerwearEvent = innerwearEvents?.find((e) => e.date === today)
+  const laundryCount = (items ?? []).filter((i) => i.state === 'LAUNDRY').length
+  const todaysInnerwearEvent = (innerwearEvents ?? []).find((e) => e.date === today)
   const innerwearItem = todaysInnerwearEvent
     ? items?.find((i) => i.id === todaysInnerwearEvent.itemId)
     : undefined
 
   const innerwearSuggestion = useMemo(() => {
     if (!items || todaysInnerwearEvent) return undefined
-    void seed
+    void seeds
     return recommendInnerwear(items, [])[0]?.item
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, todaysInnerwearEvent, seed])
+  }, [items, todaysInnerwearEvent, seeds])
 
-  const sessionsToday = wearEvents?.filter((e) => e.date === today).length ?? 0
-  const laundryCount = items?.filter((i) => i.state === 'LAUNDRY').length ?? 0
+  if (!items || !categories || !settings || !wearEvents || !compatibility) {
+    return <div className="screen" />
+  }
 
-  if (!items || !categories || !result) return <div className="screen" />
+  const doneCount = todayCategories.filter((c) => wornTodayByCategory.has(c.id!)).length
 
-  const pick = result.candidates.length > 0 ? result.candidates[cursor % result.candidates.length] : null
-  const categoryLabel = pick ? categories.find((c) => c.id === pick.categoryId)?.name : undefined
-
-  async function wearIt() {
-    if (!pick || busy) return
+  async function wearIt(pick: { top: ClothingItem; bottom: ClothingItem; categoryId: number }) {
+    if (busy) return
     setBusy(true)
     try {
       await recordWear({
@@ -81,11 +77,28 @@ export function Today() {
         categoryId: pick.categoryId,
         source: 'TODAY_RECOMMENDATION',
       })
-      setCursor(0)
-      setSeed((s) => s + 1)
       toast('Logged. Have a good one.')
     } catch (e) {
       toast(e instanceof WearError ? e.message : 'Could not record that wear.', true)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** Both Cancel and Generate again reverse the recorded wear; Generate again
+   *  additionally re-rolls so a fresh pair is waiting. */
+  async function undo(event: WearEvent, reroll: boolean) {
+    if (busy) return
+    setBusy(true)
+    try {
+      await undoWear(event.id!)
+      if (reroll && event.categoryId !== undefined) {
+        setSeeds((s) => ({ ...s, [event.categoryId!]: (s[event.categoryId!] ?? 0) + 1 }))
+        setCursors((c) => ({ ...c, [event.categoryId!]: 0 }))
+      }
+      toast(reroll ? 'Rolled a new pair.' : "Cleared today's outfit.")
+    } catch {
+      toast('Could not undo that.', true)
     } finally {
       setBusy(false)
     }
@@ -104,80 +117,225 @@ export function Today() {
     <div className="screen">
       <div className="topbar">
         <div className="grow">
-          <h1>Today</h1>
+          <h1>
+            Today{settings.userName ? <span className="sub">, {settings.userName}</span> : null}
+          </h1>
           <div className="sub">
-            {sessionsToday === 0
-              ? 'No wears logged yet'
-              : `${sessionsToday} wear${sessionsToday > 1 ? 's' : ''} logged today`}
+            {todayCategories.length === 0
+              ? 'No categories in Today'
+              : doneCount === todayCategories.length
+                ? 'All set for today'
+                : `${doneCount} of ${todayCategories.length} sorted`}
           </div>
         </div>
+        <Link className="icon-btn" to="/wardrobe/laundry" aria-label={`Laundry, ${laundryCount}`}>
+          🧺
+          {laundryCount > 0 && <span className="count">{laundryCount}</span>}
+        </Link>
       </div>
 
-      {pick ? (
+      {todayCategories.length === 0 ? (
+        <Empty
+          title="No categories in Today"
+          body="Choose which categories should produce a daily recommendation."
+          action={
+            <Link className="btn primary" to="/profile/today">
+              Choose Today categories
+            </Link>
+          }
+        />
+      ) : (
         <div className="stack">
-          <div className="card stack">
-            <div className="row" style={{ alignItems: 'center' }}>
-              <span className="chip static on">{categoryLabel ?? 'Today'}</span>
-              <span className="grow" />
-              <span className="tiny faint">
-                {result.candidates.length} option{result.candidates.length > 1 ? 's' : ''}
-              </span>
-            </div>
-
-            <div className="pair">
-              <PairSlot item={pick.top} />
-              <PairSlot item={pick.bottom} />
-            </div>
-
-            <button className="btn primary block" onClick={wearIt} disabled={busy}>
-              Wear it
-            </button>
-            <div className="row">
-              <button
-                className="btn grow"
-                onClick={() => {
-                  if (result.candidates.length > 1) setCursor((c) => c + 1)
-                  else setSeed((s) => s + 1)
-                }}
-              >
-                Recommend another
-              </button>
-              <button className="btn grow ghost" onClick={() => setLogging(true)}>
-                Log what I wore
-              </button>
-            </div>
-          </div>
+          {todayCategories.map((category) => {
+            const worn = wornTodayByCategory.get(category.id!)
+            return worn ? (
+              <WornCard
+                key={category.id}
+                category={category}
+                event={worn}
+                items={items}
+                busy={busy}
+                onCancel={() => undo(worn, false)}
+                onRegenerate={() => undo(worn, true)}
+              />
+            ) : (
+              <RecommendationCard
+                key={category.id}
+                category={category}
+                items={items}
+                compatibility={compatibility}
+                wearEvents={wearEvents}
+                impliedCompatibility={settings.impliedCompatibility}
+                cursor={cursors[category.id!] ?? 0}
+                seed={seeds[category.id!] ?? 0}
+                busy={busy}
+                onAnother={(optionCount) =>
+                  optionCount > 1
+                    ? setCursors((c) => ({ ...c, [category.id!]: (c[category.id!] ?? 0) + 1 }))
+                    : setSeeds((s) => ({ ...s, [category.id!]: (s[category.id!] ?? 0) + 1 }))
+                }
+                onWear={wearIt}
+              />
+            )
+          })}
 
           <InnerwearCard
             logged={innerwearItem}
             suggestion={innerwearSuggestion}
             onAccept={acceptInnerwear}
+            onUndo={
+              todaysInnerwearEvent
+                ? async () => {
+                    await undoInnerwear(todaysInnerwearEvent.id!)
+                    toast('Innerwear cleared.')
+                  }
+                : undefined
+            }
           />
 
-          {laundryCount > 0 && (
-            <div className="card row small" style={{ alignItems: 'center' }}>
-              <span className="muted grow">
-                {laundryCount} item{laundryCount > 1 ? 's' : ''} waiting in laundry
-              </span>
-              <Link className="btn sm" to="/wardrobe/laundry">
-                Review
-              </Link>
-            </div>
-          )}
+          <button className="btn block ghost" onClick={() => setLogging(true)}>
+            Log what I wore
+          </button>
+          <div className="tiny faint" style={{ textAlign: 'center' }}>
+            Changed again later? Log it here; Today offers one pair per category a day.
+          </div>
         </div>
-      ) : (
-        <NoPair reason={result.reason} onLog={() => setLogging(true)} />
       )}
 
       <Sheet open={logging} title="Log what I wore" onClose={() => setLogging(false)}>
-        <LogWhatIWore
-          onDone={() => {
-            setLogging(false)
-            setCursor(0)
-            setSeed((s) => s + 1)
-          }}
-        />
+        <LogWhatIWore onDone={() => setLogging(false)} />
       </Sheet>
+    </div>
+  )
+}
+
+function RecommendationCard({
+  category,
+  items,
+  compatibility,
+  wearEvents,
+  impliedCompatibility,
+  cursor,
+  seed,
+  busy,
+  onAnother,
+  onWear,
+}: {
+  category: Category
+  items: ClothingItem[]
+  compatibility: Parameters<typeof recommendPairs>[0]['compatibility']
+  wearEvents: WearEvent[]
+  impliedCompatibility: boolean
+  cursor: number
+  seed: number
+  busy: boolean
+  onAnother: (optionCount: number) => void
+  onWear: (pick: { top: ClothingItem; bottom: ClothingItem; categoryId: number }) => void
+}) {
+  const result = useMemo(() => {
+    void seed
+    return recommendPairs({
+      items,
+      compatibility,
+      wearEvents,
+      categoryIds: [category.id!],
+      impliedCompatibility,
+    })
+    // `seed` deliberately re-rolls the ranking when the user asks for another pair.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, compatibility, wearEvents, category.id, impliedCompatibility, seed])
+
+  if (result.candidates.length === 0) {
+    const copy = FAILURE_COPY[result.reason as keyof typeof FAILURE_COPY]
+    return (
+      <div className="card stack tight">
+        <span className="chip static on">{category.name}</span>
+        <div style={{ fontWeight: 600 }}>{copy?.title ?? 'Nothing to recommend'}</div>
+        <div className="small muted">{copy?.body}</div>
+        <Link
+          className="btn sm"
+          to={result.reason === 'NO_ITEMS' ? '/wardrobe/add' : '/wardrobe/compatibility'}
+          style={{ alignSelf: 'flex-start' }}
+        >
+          {result.reason === 'NO_ITEMS' ? 'Add clothing' : 'Fix this'}
+        </Link>
+      </div>
+    )
+  }
+
+  const pick = result.candidates[cursor % result.candidates.length]
+
+  return (
+    <div className="card stack">
+      <div className="row" style={{ alignItems: 'center' }}>
+        <span className="chip static on">{category.name}</span>
+        <span className="grow" />
+        <span className="tiny faint">
+          {result.candidates.length} option{result.candidates.length > 1 ? 's' : ''}
+        </span>
+      </div>
+
+      <div className="pair">
+        <PairSlot item={pick.top} />
+        <PairSlot item={pick.bottom} />
+      </div>
+
+      <button
+        className="btn primary block"
+        disabled={busy}
+        onClick={() => onWear({ top: pick.top, bottom: pick.bottom, categoryId: category.id! })}
+      >
+        Wear it
+      </button>
+      <button className="btn block" onClick={() => onAnother(result.candidates.length)}>
+        Recommend another
+      </button>
+    </div>
+  )
+}
+
+function WornCard({
+  category,
+  event,
+  items,
+  busy,
+  onCancel,
+  onRegenerate,
+}: {
+  category: Category
+  event: WearEvent
+  items: ClothingItem[]
+  busy: boolean
+  onCancel: () => void
+  onRegenerate: () => void
+}) {
+  const top = items.find((i) => i.id === event.topId)
+  const bottom = items.find((i) => i.id === event.bottomId)
+
+  return (
+    <div className="card worn stack tight">
+      <div className="row" style={{ alignItems: 'center' }}>
+        <span className="label grow">You're wearing today</span>
+        <span className="tiny faint">{category.name}</span>
+      </div>
+
+      <div className="worn-items">
+        <Thumb item={top} />
+        <Thumb item={bottom} />
+        <div className="names">
+          <div className="n">{top?.name ?? 'Removed item'}</div>
+          <div className="n muted">{bottom?.name ?? 'Removed item'}</div>
+        </div>
+      </div>
+
+      <div className="row">
+        <button className="btn grow" disabled={busy} onClick={onRegenerate}>
+          Generate again
+        </button>
+        <button className="btn grow ghost" disabled={busy} onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
     </div>
   )
 }
@@ -199,10 +357,12 @@ function InnerwearCard({
   logged,
   suggestion,
   onAccept,
+  onUndo,
 }: {
   logged?: ClothingItem
   suggestion?: ClothingItem
   onAccept: (item: ClothingItem) => void
+  onUndo?: () => void
 }) {
   if (logged) {
     return (
@@ -211,7 +371,11 @@ function InnerwearCard({
           <span className="faint">Innerwear today · </span>
           {logged.name}
         </span>
-        <StateBadge state={logged.state} />
+        {onUndo && (
+          <button className="btn sm ghost" onClick={onUndo}>
+            Undo
+          </button>
+        )}
       </div>
     )
   }
@@ -230,41 +394,6 @@ function InnerwearCard({
       </span>
       <button className="btn sm primary" onClick={() => onAccept(suggestion)}>
         Log
-      </button>
-    </div>
-  )
-}
-
-function NoPair({ reason, onLog }: { reason: string; onLog: () => void }) {
-  const copy = FAILURE_COPY[reason as keyof typeof FAILURE_COPY]
-  const action =
-    reason === 'NO_ITEMS' ? (
-      <Link className="btn primary" to="/wardrobe/add">
-        Add clothing
-      </Link>
-    ) : reason === 'NO_COMPATIBILITY' ? (
-      <Link className="btn primary" to="/wardrobe/compatibility">
-        Manage compatibility
-      </Link>
-    ) : reason === 'NO_CATEGORIES' ? (
-      <Link className="btn primary" to="/profile/today">
-        Choose Today categories
-      </Link>
-    ) : reason === 'ALL_IN_LAUNDRY' ? (
-      <Link className="btn primary" to="/wardrobe/laundry">
-        Open laundry
-      </Link>
-    ) : (
-      <Link className="btn primary" to="/wardrobe">
-        View items
-      </Link>
-    )
-
-  return (
-    <div className="stack">
-      <Empty title={copy?.title ?? 'Nothing to recommend'} body={copy?.body} action={action} />
-      <button className="btn block ghost" onClick={onLog}>
-        Log what I wore
       </button>
     </div>
   )

@@ -11,16 +11,16 @@ add them.
 
 ## What it does
 
-**Today** shows one recommended top and bottom for your current session, plus one
-innerwear suggestion for the day. Wear it, ask for another, or log what you actually
-wore. A day can hold as many wear sessions as your life does; innerwear stays one record
-per day regardless.
+**Today** shows one recommended top and bottom per enabled category, plus one innerwear
+suggestion for the day. Wear it and that category collapses to "You're wearing today"
+with **Generate again** and **Cancel**; it does not ask you again until tomorrow. A
+laundry basket in the header carries a live count of what is waiting to be washed.
 
-**Wardrobe** holds your clothes, laundry, repairs, retired items, compatibility, and a
-free-use **Generate pair** for any category, including ones you left out of Today.
+**Wardrobe** holds your clothes, laundry, repairs, retired items, compatibility, search,
+and a free-use **Generate pair** for any category, including ones you left out of Today.
 
-**Profile** configures which categories feed Today, your categories and clothing types,
-statistics, and app settings.
+**Profile** configures your name, which categories feed Today, your categories and
+clothing types, statistics, theme, and app settings.
 
 ## Design decisions worth knowing
 
@@ -34,6 +34,17 @@ off in Settings if you want the strict, fully manual model instead.
 **Recommendations never write.** Generating, re-rolling and switching categories leave
 the database untouched. Counts, laundry state and history change only on `Wear it` or
 `Log what I wore`, and asking for another pair is not a rejection signal.
+
+**One pair per category per day.** Once you wear a category's pair, Today stops offering
+that category until tomorrow. The trade is that a genuine second session in the same
+category, lounge clothes in the morning and again at night, is not offered automatically;
+log it through `Log what I wore` so wear counts and laundry thresholds stay accurate.
+
+**Undo is a real reversal, not a second write.** `Cancel`, `Generate again` and deleting
+a wear from an item's history all decrement both items, recompute last-worn from the
+events that remain, and lift anything that wear pushed into laundry back out. Counts
+never drift from the event log. The one exception is the tracking-number override on the
+edit form, which changes a count without touching history and says so.
 
 **Rotation balances four things**: how recently each item was worn, how much each has been
 worn in total, how often that exact pair has been used, and how recently that pair was
@@ -67,7 +78,8 @@ npm run lint
 ```
 
 The built app is a PWA: it works offline and installs to a phone home screen from the
-browser's share menu.
+browser's share menu. Theme follows the device by default and can be pinned to light or
+dark in Profile → Settings.
 
 ## Packaging as a mobile app
 
@@ -80,9 +92,11 @@ npx cap init Wardrober com.example.wardrober --web-dir=dist
 npm run build && npx cap add ios && npx cap add android && npx cap sync
 ```
 
-The photo input already uses `capture="environment"`, so it opens the camera directly on
-a phone. For a native picker later, swap `src/lib/photo.ts` to `@capacitor/camera`; it is
-the only place image capture is handled.
+Adding an item offers both **Take photo** (an input with `capture="environment"`, which
+opens the camera directly) and **Choose from device** (no `capture`, so the phone offers
+the gallery and any file provider). Items without a photo show an emoji you pick from a
+list, or a default glyph for their role. For a native picker later, swap
+`src/lib/photo.ts` to `@capacitor/camera`; it is the only place image capture is handled.
 
 ## Layout
 

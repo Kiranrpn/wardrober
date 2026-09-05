@@ -1,7 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useToast } from '../../components/toast'
-import { Photo, StateBadge } from '../../components/ui'
+import { Photo, Sheet, StateBadge } from '../../components/ui'
 import { ROLE_LABEL } from '../../db/types'
 import { formatDate, relativeDay } from '../../lib/dates'
 import {
@@ -14,8 +14,16 @@ import {
   useWearEvents,
 } from '../../lib/hooks'
 import { costPerWear, money } from '../../lib/stats'
-import { markClean, setItemState } from '../../lib/wear'
+import { markClean, setItemState, undoInnerwear, undoWear } from '../../lib/wear'
 import { ScreenHeader } from './ScreenHeader'
+
+interface HistoryRow {
+  key: string
+  eventId: number
+  innerwear: boolean
+  date: string
+  label: string
+}
 
 export function ItemDetail() {
   const { id } = useParams()
@@ -30,25 +38,35 @@ export function ItemDetail() {
   const navigate = useNavigate()
   const toast = useToast()
 
-  const history = useMemo(() => {
+  const [pendingDelete, setPendingDelete] = useState<HistoryRow | null>(null)
+
+  const history = useMemo<HistoryRow[]>(() => {
     if (!item) return []
     if (item.role === 'INNERWEAR') {
       return (innerwearEvents ?? [])
         .filter((e) => e.itemId === itemId)
         .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 20)
-        .map((e) => ({ key: `i${e.id}`, date: e.date, label: 'Worn' }))
+        .slice(0, 30)
+        .map((e) => ({
+          key: `i${e.id}`,
+          eventId: e.id!,
+          innerwear: true,
+          date: e.date,
+          label: 'Worn',
+        }))
     }
     return (wearEvents ?? [])
       .filter((e) => e.topId === itemId || e.bottomId === itemId)
       .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, 20)
+      .slice(0, 30)
       .map((e) => {
         const otherId = e.topId === itemId ? e.bottomId : e.topId
         const other = items?.find((i) => i.id === otherId)
         const cat = categories?.find((c) => c.id === e.categoryId)
         return {
           key: `w${e.id}`,
+          eventId: e.id!,
+          innerwear: false,
           date: e.date,
           label: `with ${other?.name ?? 'removed item'}${cat ? ` · ${cat.name}` : ''}`,
         }
@@ -194,16 +212,63 @@ export function ItemDetail() {
         {history.length === 0 ? (
           <div className="card small muted">No wears recorded yet.</div>
         ) : (
-          <div className="card">
-            {history.map((h) => (
-              <div className="kv" key={h.key}>
-                <span className="k">{formatDate(h.date)}</span>
-                <span className="small">{h.label}</span>
-              </div>
-            ))}
-          </div>
+          <>
+            <div className="card">
+              {history.map((h) => (
+                <div className="kv" key={h.key}>
+                  <span className="k">{formatDate(h.date)}</span>
+                  <span className="small grow" style={{ textAlign: 'right' }}>
+                    {h.label}
+                  </span>
+                  <button
+                    className="link"
+                    style={{ color: 'var(--text-faint)' }}
+                    onClick={() => setPendingDelete(h)}
+                    aria-label={`Delete wear on ${h.date}`}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="tiny faint">
+              Logged something by mistake? Remove it here and every count, last-worn date and
+              laundry state recalculates from what remains.
+            </div>
+          </>
         )}
       </div>
+
+      <Sheet
+        open={pendingDelete !== null}
+        title="Remove this wear?"
+        onClose={() => setPendingDelete(null)}
+      >
+        <div className="stack">
+          <p className="muted small" style={{ margin: 0 }}>
+            {pendingDelete && formatDate(pendingDelete.date)} · {pendingDelete?.label}
+          </p>
+          <p className="muted small" style={{ margin: 0 }}>
+            Both items in this wear are decremented and their last-worn dates recomputed. Anything
+            this wear pushed into laundry comes back out.
+          </p>
+          <button
+            className="btn block danger"
+            onClick={async () => {
+              if (!pendingDelete) return
+              if (pendingDelete.innerwear) await undoInnerwear(pendingDelete.eventId)
+              else await undoWear(pendingDelete.eventId)
+              setPendingDelete(null)
+              toast('Wear removed.')
+            }}
+          >
+            Remove this wear
+          </button>
+          <button className="btn block ghost" onClick={() => setPendingDelete(null)}>
+            Keep it
+          </button>
+        </div>
+      </Sheet>
     </div>
   )
 }

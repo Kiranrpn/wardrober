@@ -1,3 +1,6 @@
+/* Dark is the default palette. The light palette below overrides only the
+   colour tokens, so every screen follows without touching component styles.
+   `data-theme` is stamped on <html> by src/lib/theme.ts. */
 :root {
   --bg: #0e0f12;
   --surface: #16181d;
@@ -12,10 +15,29 @@
   --good: #5fd0a0;
   --warn: #f0b866;
   --bad: #f0757d;
+  --shadow: rgba(0, 0, 0, 0.5);
   --radius: 14px;
   --radius-sm: 10px;
   --tab-h: 62px;
   color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #eef0f4;
+  --surface-3: #e1e5ec;
+  --line: #dde1e8;
+  --text: #14161a;
+  --text-dim: #59616f;
+  --text-faint: #838b99;
+  --accent: #3457cf;
+  --accent-ink: #ffffff;
+  --good: #12795b;
+  --warn: #9a6115;
+  --bad: #bd2b3a;
+  --shadow: rgba(20, 22, 26, 0.18);
+  color-scheme: light;
 }
 
 * {
@@ -77,11 +99,23 @@ h4 {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: linear-gradient(var(--bg) 72%, transparent);
+  background: var(--bg);
   padding: calc(env(safe-area-inset-top) + 18px) 0 12px;
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+/* Opaque header with a short fade beneath, so scrolled cards never show through it. */
+.topbar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 18px;
+  background: linear-gradient(var(--bg), transparent);
+  pointer-events: none;
 }
 
 .topbar h1 {
@@ -161,6 +195,10 @@ h4 {
 
 .btn:active {
   filter: brightness(1.25);
+}
+
+:root[data-theme='light'] .btn:active {
+  filter: brightness(0.93);
 }
 
 .btn:disabled {
@@ -500,7 +538,7 @@ h4 {
   border-radius: 999px;
   font-size: 14px;
   font-weight: 600;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 10px 30px var(--shadow);
   max-width: calc(100vw - 32px);
   text-align: center;
 }
@@ -682,4 +720,170 @@ h4 {
   color: var(--text-dim);
   cursor: pointer;
   font-size: 15px;
+}
+
+/* ---------- laundry badge button ---------- */
+
+.icon-btn {
+  position: relative;
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+}
+
+.icon-btn .count {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--warn);
+  color: var(--bg);
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--bg);
+}
+
+/* ---------- search ---------- */
+
+.search {
+  position: relative;
+  margin-bottom: 12px;
+}
+
+.search input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 11px 38px 11px 38px;
+  outline: none;
+}
+
+.search input:focus {
+  border-color: var(--accent);
+}
+
+.search .glass {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0.55;
+  pointer-events: none;
+  font-size: 14px;
+}
+
+.search .clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: 0;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 6px 8px;
+  font-size: 15px;
+}
+
+/* ---------- emoji picker ---------- */
+
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+  gap: 8px;
+}
+
+.emoji-grid button {
+  aspect-ratio: 1;
+  font-size: 22px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.emoji-grid button.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface-2));
+}
+
+.emoji-grid button.none {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-faint);
+  letter-spacing: 0.04em;
+}
+
+/* ---------- credit ---------- */
+
+.credit {
+  text-align: center;
+  padding: 38px 0 6px;
+  color: var(--text-faint);
+}
+
+.credit .name {
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.credit .by {
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+/* ---------- worn-today card ---------- */
+
+.worn {
+  border-color: color-mix(in srgb, var(--good) 42%, var(--line));
+  background: color-mix(in srgb, var(--good) 9%, var(--surface));
+}
+
+.worn .label {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--good);
+}
+
+.worn-items {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.worn-items .names {
+  min-width: 0;
+  flex: 1;
+}
+
+.worn-items .names .n {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

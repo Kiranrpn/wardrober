@@ -2,10 +2,17 @@ import { useState } from 'react'
 import { useToast } from '../../components/toast'
 import { Sheet } from '../../components/ui'
 import { db, resetSeedGuard, seedDefaults, updateSettings } from '../../db/db'
+import type { ThemeChoice } from '../../db/types'
 import { useSettings } from '../../lib/hooks'
 import { ScreenHeader } from '../wardrobe/ScreenHeader'
 
 const CURRENCIES = ['₹', '$', '£', '€', '¥']
+
+const THEMES: Array<{ value: ThemeChoice; label: string }> = [
+  { value: 'system', label: 'System' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+]
 
 export function Settings() {
   const settings = useSettings()
@@ -41,6 +48,32 @@ export function Settings() {
       <ScreenHeader title="Settings" />
 
       <div className="stack">
+        <div className="field">
+          <label>Your name</label>
+          <input
+            value={settings.userName ?? ''}
+            placeholder="Kiran"
+            onChange={(e) => updateSettings({ userName: e.target.value || undefined })}
+          />
+        </div>
+
+        <div className="field">
+          <label>Theme</label>
+          <div className="row">
+            {THEMES.map((t) => (
+              <button
+                key={t.value}
+                className={`chip grow ${(settings.theme ?? 'system') === t.value ? 'on' : ''}`}
+                style={{ justifyContent: 'center' }}
+                onClick={() => updateSettings({ theme: t.value })}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="tiny faint">System follows your phone's light or dark setting.</div>
+        </div>
+
         <div className="field">
           <label>Currency</label>
           <div className="row">

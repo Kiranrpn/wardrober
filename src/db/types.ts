@@ -32,6 +32,8 @@ export interface ClothingItem {
   typeId?: number
   categoryIds: number[]
   photo?: Blob
+  /** Emoji shown when the item has no photo. */
+  icon?: string
   purchaseDate?: string
   purchasePrice?: number
   purchaseLocation?: string
@@ -81,9 +83,13 @@ export interface InnerwearWearEvent {
   source: WearSource
 }
 
+export type ThemeChoice = 'system' | 'light' | 'dark'
+
 export interface Settings {
   id?: number
   setupComplete: boolean
+  userName?: string
+  theme?: ThemeChoice
   /** When true, items sharing a category pair automatically unless excluded. */
   impliedCompatibility: boolean
   defaultLaundryThreshold: number
