@@ -75,6 +75,17 @@ export interface WearEvent {
   pairKey: string
 }
 
+/** One item worn on its own, with no pair recorded. Past-wear import writes these
+ *  when someone remembers how often they wore a shirt but not what it was worn with,
+ *  so item counts and rotation are right while pair history stays honestly empty. */
+export interface SoloWearEvent {
+  id?: number
+  date: string
+  timestamp: number
+  itemId: number
+  source: WearSource
+}
+
 export interface InnerwearWearEvent {
   id?: number
   date: string

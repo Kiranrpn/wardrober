@@ -6,6 +6,7 @@ import type {
   Compatibility,
   InnerwearWearEvent,
   Settings,
+  SoloWearEvent,
   WearEvent,
 } from './types'
 
@@ -16,6 +17,7 @@ export class WardroberDB extends Dexie {
   compatibility!: Table<Compatibility, number>
   wearEvents!: Table<WearEvent, number>
   innerwearEvents!: Table<InnerwearWearEvent, number>
+  soloWearEvents!: Table<SoloWearEvent, number>
   settings!: Table<Settings, number>
 
   constructor() {
@@ -28,6 +30,11 @@ export class WardroberDB extends Dexie {
       wearEvents: '++id, date, timestamp, topId, bottomId, pairKey, categoryId',
       innerwearEvents: '++id, date, timestamp, itemId',
       settings: '++id',
+    })
+    // Additive only: existing stores carry over untouched, so an upgrade keeps
+    // every item and wear record already on the device.
+    this.version(2).stores({
+      soloWearEvents: '++id, date, timestamp, itemId',
     })
   }
 }

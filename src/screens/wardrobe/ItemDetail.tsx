@@ -11,17 +11,21 @@ import {
   useItems,
   useRoleLabels,
   useSettings,
+  useSoloWearEvents,
   useWearEvents,
 } from '../../lib/hooks'
 import { costPerWear, money } from '../../lib/stats'
-import { markClean, setItemState, undoInnerwear, undoWear } from '../../lib/wear'
+import { markClean, setItemState, undoInnerwear, undoSoloWear, undoWear } from '../../lib/wear'
 import { ScreenHeader } from './ScreenHeader'
+
+type HistoryKind = 'pair' | 'solo' | 'innerwear'
 
 interface HistoryRow {
   key: string
   eventId: number
-  innerwear: boolean
+  kind: HistoryKind
   date: string
+  timestamp: number
   label: string
 }
 
@@ -34,6 +38,7 @@ export function ItemDetail() {
   const types = useClothingTypes()
   const wearEvents = useWearEvents()
   const innerwearEvents = useInnerwearEvents()
+  const soloEvents = useSoloWearEvents()
   const settings = useSettings()
   const roleLabels = useRoleLabels()
   const navigate = useNavigate()
@@ -41,38 +46,54 @@ export function ItemDetail() {
 
   const [pendingDelete, setPendingDelete] = useState<HistoryRow | null>(null)
 
+  /** An item can be worn as half of a pair, on its own, or as the day's essentials.
+   *  All three belong in one list, newest first, or deleting the wrong kind of
+   *  record would be the only way to notice the others existed. */
   const history = useMemo<HistoryRow[]>(() => {
     if (!item) return []
-    if (item.role === 'INNERWEAR') {
-      return (innerwearEvents ?? [])
-        .filter((e) => e.itemId === itemId)
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 30)
-        .map((e) => ({
-          key: `i${e.id}`,
-          eventId: e.id!,
-          innerwear: true,
-          date: e.date,
-          label: 'Worn',
-        }))
-    }
-    return (wearEvents ?? [])
-      .filter((e) => e.topId === itemId || e.bottomId === itemId)
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, 30)
-      .map((e) => {
-        const otherId = e.topId === itemId ? e.bottomId : e.topId
-        const other = items?.find((i) => i.id === otherId)
-        const cat = categories?.find((c) => c.id === e.categoryId)
-        return {
-          key: `w${e.id}`,
-          eventId: e.id!,
-          innerwear: false,
-          date: e.date,
-          label: `with ${other?.name ?? 'removed item'}${cat ? ` · ${cat.name}` : ''}`,
-        }
+    const rows: HistoryRow[] = []
+
+    for (const e of innerwearEvents ?? []) {
+      if (e.itemId !== itemId) continue
+      rows.push({
+        key: `i${e.id}`,
+        eventId: e.id!,
+        kind: 'innerwear',
+        date: e.date,
+        timestamp: e.timestamp,
+        label: 'Worn',
       })
-  }, [item, itemId, wearEvents, innerwearEvents, items, categories])
+    }
+
+    for (const e of soloEvents ?? []) {
+      if (e.itemId !== itemId) continue
+      rows.push({
+        key: `s${e.id}`,
+        eventId: e.id!,
+        kind: 'solo',
+        date: e.date,
+        timestamp: e.timestamp,
+        label: 'Worn on its own',
+      })
+    }
+
+    for (const e of wearEvents ?? []) {
+      if (e.topId !== itemId && e.bottomId !== itemId) continue
+      const otherId = e.topId === itemId ? e.bottomId : e.topId
+      const other = items?.find((i) => i.id === otherId)
+      const cat = categories?.find((c) => c.id === e.categoryId)
+      rows.push({
+        key: `w${e.id}`,
+        eventId: e.id!,
+        kind: 'pair',
+        date: e.date,
+        timestamp: e.timestamp,
+        label: `with ${other?.name ?? 'removed item'}${cat ? ` · ${cat.name}` : ''}`,
+      })
+    }
+
+    return rows.sort((a, b) => b.timestamp - a.timestamp).slice(0, 30)
+  }, [item, itemId, wearEvents, soloEvents, innerwearEvents, items, categories])
 
   if (!item || !settings) return <div className="screen" />
 
@@ -250,14 +271,17 @@ export function ItemDetail() {
             {pendingDelete && formatDate(pendingDelete.date)} · {pendingDelete?.label}
           </p>
           <p className="muted small" style={{ margin: 0 }}>
-            Both items in this wear are decremented and their last-worn dates recomputed. Anything
-            this wear pushed into laundry comes back out.
+            {pendingDelete?.kind === 'pair'
+              ? 'Both items in this wear are decremented and their last-worn dates recomputed.'
+              : "This item's count is decremented and its last-worn date recomputed."}{' '}
+            Anything this wear pushed into laundry comes back out.
           </p>
           <button
             className="btn block danger"
             onClick={async () => {
               if (!pendingDelete) return
-              if (pendingDelete.innerwear) await undoInnerwear(pendingDelete.eventId)
+              if (pendingDelete.kind === 'innerwear') await undoInnerwear(pendingDelete.eventId)
+              else if (pendingDelete.kind === 'solo') await undoSoloWear(pendingDelete.eventId)
               else await undoWear(pendingDelete.eventId)
               setPendingDelete(null)
               toast('Wear removed.')

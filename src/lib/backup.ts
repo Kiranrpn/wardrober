@@ -6,11 +6,12 @@ import type {
   Compatibility,
   InnerwearWearEvent,
   Settings,
+  SoloWearEvent,
   WearEvent,
 } from '../db/types'
 
 export const BACKUP_FORMAT = 'batte-backup'
-export const BACKUP_VERSION = 1
+export const BACKUP_VERSION = 2
 
 /** A photo travelling as text. Kept as an object rather than a bare string so a
  *  future format can carry a different encoding without guessing. */
@@ -36,6 +37,8 @@ export interface BackupFile {
     compatibility: Compatibility[]
     wearEvents: WearEvent[]
     innerwearEvents: InnerwearWearEvent[]
+    /** Absent in version 1 files, which predate solo wears. */
+    soloWearEvents?: SoloWearEvent[]
   }
 }
 
@@ -64,8 +67,16 @@ function decodePhoto(photo: EncodedPhoto): Blob {
  *  inflates them by about a third and a wardrobe of a hundred photographed items
  *  lands somewhere near 15 MB; without them the same backup is a few hundred KB. */
 export async function buildBackup(includePhotos: boolean): Promise<BackupFile> {
-  const [settings, categories, clothingTypes, items, compatibility, wearEvents, innerwearEvents] =
-    await Promise.all([
+  const [
+    settings,
+    categories,
+    clothingTypes,
+    items,
+    compatibility,
+    wearEvents,
+    innerwearEvents,
+    soloWearEvents,
+  ] = await Promise.all([
       db.settings.toArray(),
       db.categories.toArray(),
       db.clothingTypes.toArray(),
@@ -73,6 +84,7 @@ export async function buildBackup(includePhotos: boolean): Promise<BackupFile> {
       db.compatibility.toArray(),
       db.wearEvents.toArray(),
       db.innerwearEvents.toArray(),
+      db.soloWearEvents.toArray(),
     ])
 
   const exportedItems: ExportedItem[] = await Promise.all(
@@ -94,6 +106,7 @@ export async function buildBackup(includePhotos: boolean): Promise<BackupFile> {
       compatibility: compatibility.length,
       wearEvents: wearEvents.length,
       innerwearEvents: innerwearEvents.length,
+      soloWearEvents: soloWearEvents.length,
       photos: items.filter((i) => i.photo).length,
     },
     data: {
@@ -104,6 +117,7 @@ export async function buildBackup(includePhotos: boolean): Promise<BackupFile> {
       compatibility,
       wearEvents,
       innerwearEvents,
+      soloWearEvents,
     },
   }
 }
@@ -154,8 +168,8 @@ export function parseBackup(text: string): BackupFile {
 
 export interface RestoreSummary {
   items: number
-  wearEvents: number
-  innerwearEvents: number
+  /** Every kind of wear record together, which is what a person means by "wears". */
+  wearRecords: number
   photos: number
 }
 
@@ -179,6 +193,7 @@ export async function restoreBackup(file: BackupFile): Promise<RestoreSummary> {
       db.compatibility,
       db.wearEvents,
       db.innerwearEvents,
+      db.soloWearEvents,
     ],
     async () => {
       await Promise.all([
@@ -189,6 +204,7 @@ export async function restoreBackup(file: BackupFile): Promise<RestoreSummary> {
         db.compatibility.clear(),
         db.wearEvents.clear(),
         db.innerwearEvents.clear(),
+        db.soloWearEvents.clear(),
       ])
 
       // bulkPut keeps the inbound ids, so compatibility rows and wear events still
@@ -199,6 +215,8 @@ export async function restoreBackup(file: BackupFile): Promise<RestoreSummary> {
       await db.compatibility.bulkPut(file.data.compatibility)
       await db.wearEvents.bulkPut(file.data.wearEvents)
       await db.innerwearEvents.bulkPut(file.data.innerwearEvents)
+      // Version 1 files have none; the table is simply left empty.
+      await db.soloWearEvents.bulkPut(file.data.soloWearEvents ?? [])
 
       // A backup with no settings row would leave the app with nothing to read,
       // so one is rebuilt with setup already marked done.
@@ -216,8 +234,10 @@ export async function restoreBackup(file: BackupFile): Promise<RestoreSummary> {
 
   return {
     items: items.length,
-    wearEvents: file.data.wearEvents.length,
-    innerwearEvents: file.data.innerwearEvents.length,
+    wearRecords:
+      file.data.wearEvents.length +
+      file.data.innerwearEvents.length +
+      (file.data.soloWearEvents?.length ?? 0),
     photos: items.filter((i) => i.photo).length,
   }
 }

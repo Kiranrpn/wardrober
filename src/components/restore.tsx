@@ -46,7 +46,7 @@ export function RestoreControl({
       const summary = await restoreBackup(pending.file)
       resetSeedGuard()
       setPending(null)
-      toast(`Restored ${summary.items} items and ${summary.wearEvents} wears.`)
+      toast(`Restored ${summary.items} items and ${summary.wearRecords} wears.`)
       onRestored?.()
     } catch (e) {
       toast(e instanceof BackupError ? e.message : 'Could not restore that backup.', true)
@@ -85,7 +85,9 @@ export function RestoreControl({
               <Row
                 k="Wear records"
                 v={String(
-                  pending.file.data.wearEvents.length + pending.file.data.innerwearEvents.length,
+                  pending.file.data.wearEvents.length +
+                    pending.file.data.innerwearEvents.length +
+                    (pending.file.data.soloWearEvents?.length ?? 0),
                 )}
               />
               <Row k="Categories" v={String(pending.file.data.categories.length)} />
