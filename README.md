@@ -61,12 +61,22 @@ does not feel deterministic.
 so lifetime cost per wear stays honest. Deleting a category detaches it from items and
 keeps the wear history intact.
 
+**Past wears are imported item by item, not outfit by outfit.** Nobody remembers what a
+shirt was paired with six months ago, but most people do know they wore it often. So the
+default import mode is a number against each item, recorded as a wear of that item alone:
+its count, its last-worn date and its place in the rotation all become right, and no
+outfit it never wore is invented to hold the record. A second mode records a pair for an
+outfit you genuinely remember, and only that mode feeds pair history. Logging today's
+outfit still requires both halves, because at the moment of wearing you do know.
+
 **Imported history skips the laundry counter.** Twelve past wears should not send a shirt
 to the wash: those clothes have already been through it. Imported occurrences are spread
 one week apart backwards from the date you give, so rotation starts from something like
 reality. Undoing an imported wear is symmetric: it leaves the laundry counter alone too,
-because that wear never touched it. A pair, an essentials item, or both can be imported in
-one go, and a day that already holds an essentials record is left as the user logged it.
+because that wear never touched it. In outfit mode a pair, an essentials item, or both can
+be imported in one go, and a day that already holds an essentials record is left as the
+user logged it. An item's history shows all three kinds of record together, and deleting
+any one of them recomputes last-worn from every kind that remains.
 
 ## Data and privacy
 

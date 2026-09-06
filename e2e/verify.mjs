@@ -127,12 +127,13 @@ const dump = () => page.evaluate(async () => {
     const r = db.transaction(s).objectStore(s).getAll()
     r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error)
   })
-  const [items, wearEvents, innerwearEvents, settings, categories] = await Promise.all(
-    ['items', 'wearEvents', 'innerwearEvents', 'settings', 'categories'].map(read))
+  const [items, wearEvents, innerwearEvents, soloWearEvents, settings, categories] =
+    await Promise.all(
+      ['items', 'wearEvents', 'innerwearEvents', 'soloWearEvents', 'settings', 'categories'].map(read))
   db.close()
   return {
     items: items.map(({ photo, ...i }) => ({ ...i, photoSize: photo ? photo.size : 0 })),
-    wearEvents, innerwearEvents, settings, categories,
+    wearEvents, innerwearEvents, soloWearEvents, settings, categories,
   }
 })
 
@@ -199,6 +200,7 @@ check('photo stored and compressed', state.items.find((i) => i.name === 'Blue sh
 
 console.log('\n--- 3. Import past wears now covers essentials ---')
 await nav('#/profile/import')
+await page.getByRole('button', { name: 'A remembered outfit' }).click()
 await page.waitForSelector('.select-grid')
 check('essentials picker present', (await page.locator('.field', { hasText: 'Basics' }).count()) > 0)
 await page.locator('.field').filter({ hasText: 'Times worn' }).locator('input').fill('3')
@@ -223,6 +225,7 @@ check('pair import unchanged', shirt.lifetimeWears === 3 && shirt.wearsSinceLaun
 
 console.log('\n--- essentials-only import (no pair selected) ---')
 await nav('#/profile/import')
+await page.getByRole('button', { name: 'A remembered outfit' }).click()
 await page.waitForSelector('.select-grid')
 await page.locator('.field').filter({ hasText: 'Last worn on' }).locator('input').fill('2026-01-05')
 await page.locator('.field', { hasText: /^Basics/ }).locator('.cell', { hasText: 'Cotton vest' }).click()
@@ -260,6 +263,62 @@ if (await page.getByRole('button', { name: 'Wear it' }).count()) {
   check('cancelling a real wear does decrement the laundry counter', s3.wearsSinceLaundry === 0, String(s3.wearsSinceLaundry))
 } else check('Today offered a pair', false, 'no Wear it button')
 
+console.log('\n--- individual import: times worn per item, no pair invented ---')
+await nav('#/profile/import')
+await page.waitForSelector('.item-row')
+check('item-by-item is the default mode',
+  (await page.locator('.chip', { hasText: 'Item by item' }).getAttribute('class')).includes('on'))
+check('every role gets a count row, not just tops and bottoms',
+  (await page.locator('input[aria-label^="Times worn:"]').count()) === 3)
+
+const before = await dump()
+const pairEventsBefore = before.wearEvents.length
+const shirtCount = page.locator('input[aria-label="Times worn: Blue shirt"]')
+const trouserCount = page.locator('input[aria-label="Times worn: Grey trousers"]')
+await shirtCount.fill('4')
+await trouserCount.fill('2')
+check('button totals the wears about to be written',
+  (await page.getByRole('button', { name: /^Import 6 wears$/ }).count()) === 1)
+const bulkToast = await toastAfter(() => page.getByRole('button', { name: /^Import 6 wears$/ }).click())
+check('individual import reports items and wears', /6 wears across 2 items/.test(bulkToast), bulkToast)
+
+state = await dump()
+check('6 solo records written', state.soloWearEvents.length === 6, String(state.soloWearEvents.length))
+check('no pair history invented for them', state.wearEvents.length === pairEventsBefore,
+  `${state.wearEvents.length} vs ${pairEventsBefore}`)
+const soloShirt = state.items.find((i) => i.name === 'Blue shirt')
+const soloTrouser = state.items.find((i) => i.name === 'Grey trousers')
+check('shirt gained exactly 4 wears',
+  soloShirt.lifetimeWears === before.items.find((i) => i.name === 'Blue shirt').lifetimeWears + 4)
+check('trousers gained exactly 2 wears',
+  soloTrouser.lifetimeWears === before.items.find((i) => i.name === 'Grey trousers').lifetimeWears + 2)
+check('solo import left laundry counters alone',
+  soloShirt.wearsSinceLaundry === 0 && soloShirt.state === 'AVAILABLE')
+check('solo records spread one week apart',
+  new Set(state.soloWearEvents.filter((e) => e.itemId === soloShirt.id).map((e) => e.date)).size === 4)
+
+console.log('\n--- a solo record shows in item history and reverses cleanly ---')
+await nav(`#/wardrobe/items/${soloShirt.id}`)
+await page.waitForSelector('.card .kv button.link')
+const historyText = await page.locator('.card', { hasText: 'Worn on its own' }).first().innerText()
+check('solo wears appear in the item history', /Worn on its own/.test(historyText))
+const beforeUndo = (await dump()).items.find((i) => i.name === 'Blue shirt')
+await page.locator('.kv', { hasText: 'Worn on its own' }).first().locator('button.link').click()
+await page.waitForSelector('.sheet')
+check('delete copy is singular for a solo record',
+  /This item's count is decremented/.test(await page.locator('.sheet').innerText()))
+await toastAfter(() => page.getByRole('button', { name: 'Remove this wear' }).click())
+state = await dump()
+const afterUndo = state.items.find((i) => i.name === 'Blue shirt')
+check('undoing a solo record decrements only that item',
+  afterUndo.lifetimeWears === beforeUndo.lifetimeWears - 1, String(afterUndo.lifetimeWears))
+check('undoing an imported solo record leaves laundry alone', afterUndo.wearsSinceLaundry === 0)
+check('trousers untouched by the shirt undo',
+  state.items.find((i) => i.name === 'Grey trousers').lifetimeWears === soloTrouser.lifetimeWears)
+check('solo record removed', state.soloWearEvents.length === 5)
+check('last-worn recomputed across pair and solo records together',
+  typeof afterUndo.lastWornAt === 'number')
+
 console.log('\n--- 2. Export ---')
 await nav('#/profile/backup')
 await page.waitForSelector('button:has-text("Save a backup file")')
@@ -271,11 +330,14 @@ check('backup filename is date-stamped', /^batte-backup-\d{4}-\d{2}-\d{2}\.json$
   download.suggestedFilename())
 const backup = JSON.parse(fs.readFileSync(BACKUP, 'utf8'))
 state = await dump()
-check('format tag present', backup.format === 'batte-backup' && backup.version === 1)
+check('format tag present', backup.format === 'batte-backup' && backup.version === 2)
 check('settings exported', backup.data.settings[0].userName === 'Kiran' && backup.data.settings[0].roleLabels.INNERWEAR === 'Basics')
 check('items exported', backup.data.items.length === 3)
 check('wear events exported', backup.data.wearEvents.length === state.wearEvents.length)
 check('essentials events exported', backup.data.innerwearEvents.length === state.innerwearEvents.length)
+check('solo wears exported', backup.data.soloWearEvents.length === state.soloWearEvents.length,
+  String(backup.data.soloWearEvents.length))
+check('backup version bumped for the new table', backup.version === 2)
 check('categories exported', backup.data.categories.length === state.categories.length)
 check('photo exported as base64', backup.includesPhotos === true &&
   backup.data.items.find((i) => i.name === 'Blue shirt').photo?.encoding === 'base64')
@@ -310,6 +372,9 @@ await page.waitForSelector('.sheet')
 const sheet = await page.locator('.sheet').innerText()
 check('restore previews what is in the file before writing anything',
   /Items/.test(sheet) && /\b3\b/.test(sheet), sheet.replace(/\n/g, ' | '))
+check('preview counts solo records too',
+  new RegExp(`Wear records\\s*\\|?\\s*${backup.data.wearEvents.length + backup.data.innerwearEvents.length + backup.data.soloWearEvents.length}`)
+    .test(sheet.replace(/\n/g, ' | ')), sheet.replace(/\n/g, ' | '))
 await page.getByRole('button', { name: 'Replace my wardrobe' }).click()
 await page.waitForSelector('.tabbar', { timeout: 15000 })
 
@@ -317,6 +382,9 @@ state = await dump()
 check('items restored', state.items.length === 3, String(state.items.length))
 check('wear events restored', state.wearEvents.length === backup.data.wearEvents.length)
 check('essentials events restored', state.innerwearEvents.length === backup.data.innerwearEvents.length)
+check('solo wears restored', state.soloWearEvents.length === backup.data.soloWearEvents.length)
+check('restored solo records still resolve to a real item',
+  state.soloWearEvents.every((e) => state.items.some((i) => i.id === e.itemId)))
 check('categories restored', state.categories.length === backup.data.categories.length)
 check('settings restored', state.settings[0]?.userName === 'Kiran' && state.settings[0]?.roleLabels?.INNERWEAR === 'Basics')
 check('photo restored as a real blob',
@@ -337,6 +405,21 @@ await page.waitForSelector('button:has-text("Choose a backup file")')
 await page.locator('input[type=file]').setInputFiles(`${TMP}/bad.json`)
 await page.waitForSelector('.toast.error', { timeout: 8000 })
 check('non-backup JSON rejected', (await page.locator('.toast.error').innerText()).includes('not exported by this app'))
+const v1 = JSON.parse(fs.readFileSync(BACKUP, 'utf8'))
+v1.version = 1
+delete v1.data.soloWearEvents
+fs.writeFileSync(`${TMP}/v1.json`, JSON.stringify(v1))
+await page.locator('.toast').waitFor({ state: 'detached' }).catch(() => {})
+await page.locator('input[type=file]').setInputFiles(`${TMP}/v1.json`)
+await page.waitForSelector('.sheet')
+await page.getByRole('button', { name: 'Replace my wardrobe' }).click()
+await page.waitForSelector('.tabbar', { timeout: 15000 })
+state = await dump()
+check('a version 1 backup still restores, with no solo records',
+  state.items.length === 3 && state.soloWearEvents.length === 0)
+await nav('#/profile/backup')
+await page.waitForSelector('button:has-text("Choose a backup file")')
+
 fs.writeFileSync(`${TMP}/trunc.json`, '{"format":"batte-backup","version":1,"data":{"items":[]}}')
 await page.locator('.toast').waitFor({ state: 'detached' }).catch(() => {})
 await page.locator('input[type=file]').setInputFiles(`${TMP}/trunc.json`)

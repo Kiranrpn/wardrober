@@ -44,6 +44,10 @@ export function useWearEvents() {
   return useLiveQuery(() => db.wearEvents.toArray(), [])
 }
 
+export function useSoloWearEvents() {
+  return useLiveQuery(() => db.soloWearEvents.toArray(), [])
+}
+
 export function useInnerwearEvents() {
   return useLiveQuery(() => db.innerwearEvents.toArray(), [])
 }
