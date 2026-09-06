@@ -35,6 +35,7 @@ export function ProfileHome() {
 
       <div className="section-label">App</div>
       <div className="stack tight">
+        <Tile to="/profile/backup" label="Backup & restore" />
         <Tile to="/profile/settings" label="Settings" />
       </div>
 

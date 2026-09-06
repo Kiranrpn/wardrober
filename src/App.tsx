@@ -6,6 +6,7 @@ import { useSettings } from './lib/hooks'
 import { applyTheme } from './lib/theme'
 import { Onboarding } from './screens/Onboarding'
 import { Today } from './screens/Today'
+import { Backup } from './screens/profile/Backup'
 import { Categories } from './screens/profile/Categories'
 import { ClothingTypes } from './screens/profile/ClothingTypes'
 import { HistoricalImport } from './screens/profile/HistoricalImport'
@@ -75,6 +76,7 @@ export default function App() {
           <Route path="/profile/types" element={<ClothingTypes />} />
           <Route path="/profile/statistics" element={<Statistics />} />
           <Route path="/profile/import" element={<HistoricalImport />} />
+          <Route path="/profile/backup" element={<Backup />} />
           <Route path="/profile/settings" element={<Settings />} />
           <Route path="*" element={<Today />} />
         </Routes>

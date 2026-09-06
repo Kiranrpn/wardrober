@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useToast } from '../../components/toast'
 import { Sheet } from '../../components/ui'
 import { db, resetSeedGuard, seedDefaults, updateSettings } from '../../db/db'
@@ -160,7 +161,9 @@ export function Settings() {
         </div>
 
         <div className="card small muted">
-          Everything lives on this device. Nothing is uploaded anywhere.
+          Everything lives on this device. Nothing is uploaded anywhere, which also means nothing
+          is recoverable if you clear site data or lose the phone. Keep a copy from{' '}
+          <Link to="/profile/backup">Backup &amp; restore</Link>.
         </div>
 
         <div className="divider" />
