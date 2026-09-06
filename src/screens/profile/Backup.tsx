@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { RestoreControl } from '../../components/restore'
 import { useToast } from '../../components/toast'
 import { BackupError, backupFilename, buildBackup } from '../../lib/backup'
+import { isNativeApp, saveFileNatively } from '../../lib/native'
 import { useItems } from '../../lib/hooks'
 import { ScreenHeader } from '../wardrobe/ScreenHeader'
 
@@ -19,6 +20,7 @@ export function Backup() {
 
   const [includePhotos, setIncludePhotos] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [lastSaved, setLastSaved] = useState<string | null>(null)
 
   const photoCount = (items ?? []).filter((i) => i.photo).length
 
@@ -28,15 +30,26 @@ export function Backup() {
     try {
       const file = await buildBackup(includePhotos)
       const name = backupFilename(file)
-      const blob = new Blob([JSON.stringify(file)], { type: 'application/json' })
+      const text = JSON.stringify(file)
+      const blob = new Blob([text], { type: 'application/json' })
+      const size = readableSize(blob.size)
 
-      // Share first where it exists: a WebView inside a native shell often has no
-      // download manager, and the share sheet is the only way out of the app.
+      // Installed as an app, the file is written to device storage first and only
+      // then offered to the share sheet. Neither browser route works inside the
+      // native WebView: it has no download manager, and Web Share is not
+      // implemented there, so both would fail silently.
+      const saved = await saveFileNatively(name, text)
+      if (saved) {
+        setLastSaved(saved.folder)
+        toast(`Saved to ${saved.folder} (${size}).`)
+        return
+      }
+
       const shareable = new File([blob], name, { type: 'application/json' })
       if (navigator.canShare?.({ files: [shareable] })) {
         try {
           await navigator.share({ files: [shareable], title: name })
-          toast(`Backup shared (${readableSize(blob.size)}).`)
+          toast(`Backup shared (${size}).`)
           return
         } catch {
           // Cancelled or refused; fall through to a plain download.
@@ -49,7 +62,7 @@ export function Backup() {
       a.download = name
       a.click()
       setTimeout(() => URL.revokeObjectURL(url), 10000)
-      toast(`Backup saved (${readableSize(blob.size)}).`)
+      toast(`Backup saved (${size}).`)
     } catch (e) {
       toast(e instanceof BackupError ? e.message : 'Could not build that backup.', true)
     } finally {
@@ -88,7 +101,16 @@ export function Backup() {
         </button>
         <div className="tiny faint" style={{ textAlign: 'center' }}>
           One JSON file: settings, categories, types, every item and every wear record.
+          {isNativeApp()
+            ? ' It is written to your device and the share sheet opens so you can also send it to Drive or a computer.'
+            : ''}
         </div>
+        {lastSaved && (
+          <div className="card small muted">
+            Last backup written to <strong>{lastSaved}</strong>, named{' '}
+            <code>batte-backup-…json</code>. Find it there in your file manager.
+          </div>
+        )}
 
         <div className="divider" />
 

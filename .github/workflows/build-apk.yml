@@ -24,7 +24,10 @@ jobs:
       - name: Install dependencies & Build
         run: |
           npm install
-          npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/assets
+          # Filesystem and Share back the in-app backup: the WebView has no download
+          # manager and no Web Share, so without these the export button does nothing.
+          npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/assets \
+            @capacitor/filesystem @capacitor/share
           npx cap init Batte com.example.wardrober --web-dir=dist
           npm run build
           npx cap add android

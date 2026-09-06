@@ -88,8 +88,14 @@ Clearing site data erases the wardrobe, so keep a backup.
 categories, clothing types, every item and every wear record. Photos are included by
 default as base64, which inflates them by about a third; turn that off for a file a few
 hundred KB instead of several MB, and those items come back showing their emoji or first
-letter. On a phone the file goes out through the share sheet where one exists, since a
-WebView inside a native shell often has no download manager.
+letter. Where the file goes depends on how the app is running. Installed from the APK it is
+written straight to device storage, Documents first and falling back through the other
+writable locations, and then handed to the Android share sheet so it can also go to Drive
+or a computer; the screen names the folder it actually landed in. Neither browser route
+works inside that WebView, which has no download manager and no Web Share, so both would
+fail silently. In a browser it uses Web Share where that exists and a plain download
+otherwise. The APK workflow installs `@capacitor/filesystem` and `@capacitor/share` for
+this; without them the export button does nothing.
 
 **Restore replaces, it does not merge.** Merging would mean renumbering every id and
 rebuilding the references between items, compatibility and wear events; a straight replace
