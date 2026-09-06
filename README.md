@@ -20,7 +20,12 @@ laundry basket in the header carries a live count of what is waiting to be washe
 and a free-use **Generate pair** for any category, including ones you left out of Today.
 
 **Profile** configures your name, which categories feed Today, your categories and
-clothing types, statistics, theme, and app settings.
+clothing types, statistics, theme, backup and restore, and app settings.
+
+**Setup** asks two things before anything else: your name, and what you want to call the
+three roles. `Top`, `Bottom` and `Essentials` are pre-filled as suggestions, so `Next`
+alone accepts them. The same screen offers **Restore from a backup file**, because a fresh
+install and a wardrobe that was just reset are exactly when someone reaches for one.
 
 ## Design decisions worth knowing
 
@@ -59,13 +64,28 @@ keeps the wear history intact.
 **Imported history skips the laundry counter.** Twelve past wears should not send a shirt
 to the wash: those clothes have already been through it. Imported occurrences are spread
 one week apart backwards from the date you give, so rotation starts from something like
-reality.
+reality. Undoing an imported wear is symmetric: it leaves the laundry counter alone too,
+because that wear never touched it. A pair, an essentials item, or both can be imported in
+one go, and a day that already holds an essentials record is left as the user logged it.
 
 ## Data and privacy
 
 Everything lives in IndexedDB on the device. There is no account, no server, and no
 network call. Photos are downscaled to 900px and re-encoded as JPEG before storage.
-Clearing site data erases the wardrobe, and there is no backup yet.
+Clearing site data erases the wardrobe, so keep a backup.
+
+**Backup and restore** live in Profile. Export writes one JSON file holding settings,
+categories, clothing types, every item and every wear record. Photos are included by
+default as base64, which inflates them by about a third; turn that off for a file a few
+hundred KB instead of several MB, and those items come back showing their emoji or first
+letter. On a phone the file goes out through the share sheet where one exists, since a
+WebView inside a native shell often has no download manager.
+
+**Restore replaces, it does not merge.** Merging would mean renumbering every id and
+rebuilding the references between items, compatibility and wear events; a straight replace
+keeps ids intact, which is the only way restored history is guaranteed to still point at
+the right clothes. The file is validated and previewed before a single row is written, and
+the current wardrobe is erased in the same transaction that loads the new one.
 
 ## Running it
 
@@ -75,6 +95,16 @@ npm run dev      # http://localhost:5173
 npm run build    # production build into dist/
 npm run preview  # serve the built app
 npm run lint
+```
+
+There is no unit test suite. `e2e/verify.mjs` drives a real browser through setup, adding
+clothes, importing past wears, the backup round trip and a wiped-then-restored device, and
+asserts against IndexedDB directly. Playwright is deliberately not a dependency of the app:
+
+```bash
+npm i -D playwright && npx playwright install chromium
+npm run build && npx vite preview --port 4173 &
+node e2e/verify.mjs
 ```
 
 The built app is a PWA: it works offline and installs to a phone home screen from the

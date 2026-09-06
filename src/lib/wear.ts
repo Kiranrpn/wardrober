@@ -1,5 +1,5 @@
 import { db } from '../db/db'
-import type { ClothingItem, WearSource } from '../db/types'
+import type { ClothingItem, InnerwearWearEvent, WearEvent, WearSource } from '../db/types'
 import { pairKey } from '../db/types'
 import { todayKey } from './dates'
 
@@ -74,28 +74,34 @@ export async function recordWear(args: RecordWearArgs) {
   })
 }
 
+/** The laundry side of a reversal. An imported wear never touched the laundry
+ *  counter (see applyWear), so undoing one must not decrement it either: doing so
+ *  is what let counts drift below the event log. */
+function reverseLaundry(item: ClothingItem, historical: boolean): Partial<ClothingItem> {
+  if (historical) return {}
+  const wearsSinceLaundry = Math.max(0, item.wearsSinceLaundry - 1)
+  const freed =
+    item.state === 'LAUNDRY' && item.laundryThreshold > 0 && wearsSinceLaundry < item.laundryThreshold
+  return { wearsSinceLaundry, state: freed ? 'AVAILABLE' : item.state }
+}
+
 /** Reverses one item's share of a wear: decrement counts, recompute last-worn
  *  from the events that remain, and lift it back out of laundry if this wear is
  *  what pushed it there. Recomputing rather than remembering keeps the item
  *  honest no matter which event was removed. */
-async function reverseWear(itemId: number, ignoreEventId: number) {
+async function reverseWear(itemId: number, event: WearEvent) {
   const item = await db.items.get(itemId)
   if (!item) return
 
   const remaining = (
     await db.wearEvents.where('topId').equals(itemId).toArray()
   ).concat(await db.wearEvents.where('bottomId').equals(itemId).toArray())
-  const others = remaining.filter((e) => e.id !== ignoreEventId)
-
-  const wearsSinceLaundry = Math.max(0, item.wearsSinceLaundry - 1)
-  const freedFromLaundry =
-    item.state === 'LAUNDRY' && item.laundryThreshold > 0 && wearsSinceLaundry < item.laundryThreshold
+  const others = remaining.filter((e) => e.id !== event.id)
 
   await db.items.update(itemId, {
     lifetimeWears: Math.max(0, item.lifetimeWears - 1),
-    wearsSinceLaundry,
     lastWornAt: others.length > 0 ? Math.max(...others.map((e) => e.timestamp)) : undefined,
-    state: freedFromLaundry ? 'AVAILABLE' : item.state,
+    ...reverseLaundry(item, event.source === 'HISTORICAL_IMPORT'),
     updatedAt: Date.now(),
   })
 }
@@ -106,28 +112,24 @@ export async function undoWear(eventId: number) {
   return db.transaction('rw', db.items, db.wearEvents, async () => {
     const event = await db.wearEvents.get(eventId)
     if (!event) return
-    await reverseWear(event.topId, eventId)
-    await reverseWear(event.bottomId, eventId)
+    await reverseWear(event.topId, event)
+    await reverseWear(event.bottomId, event)
     await db.wearEvents.delete(eventId)
   })
 }
 
 /** Reverses one item's share of an innerwear record. */
-async function reverseInnerwear(itemId: number, ignoreEventId: number) {
+async function reverseInnerwear(itemId: number, event: InnerwearWearEvent) {
   const item = await db.items.get(itemId)
   if (!item) return
   const others = (await db.innerwearEvents.where('itemId').equals(itemId).toArray()).filter(
-    (e) => e.id !== ignoreEventId,
+    (e) => e.id !== event.id,
   )
-  const wearsSinceLaundry = Math.max(0, item.wearsSinceLaundry - 1)
-  const freedFromLaundry =
-    item.state === 'LAUNDRY' && item.laundryThreshold > 0 && wearsSinceLaundry < item.laundryThreshold
 
   await db.items.update(itemId, {
     lifetimeWears: Math.max(0, item.lifetimeWears - 1),
-    wearsSinceLaundry,
     lastWornAt: others.length > 0 ? Math.max(...others.map((e) => e.timestamp)) : undefined,
-    state: freedFromLaundry ? 'AVAILABLE' : item.state,
+    ...reverseLaundry(item, event.source === 'HISTORICAL_IMPORT'),
     updatedAt: Date.now(),
   })
 }
@@ -148,7 +150,7 @@ export async function setTodaysInnerwear(
     const existing = await db.innerwearEvents.where('date').equals(date).first()
     if (existing) {
       if (existing.itemId === itemId) return false
-      await reverseInnerwear(existing.itemId, existing.id!)
+      await reverseInnerwear(existing.itemId, existing)
       await db.innerwearEvents.delete(existing.id!)
     }
 
@@ -163,7 +165,7 @@ export async function undoInnerwear(eventId: number) {
   return db.transaction('rw', db.items, db.innerwearEvents, async () => {
     const event = await db.innerwearEvents.get(eventId)
     if (!event) return
-    await reverseInnerwear(event.itemId, eventId)
+    await reverseInnerwear(event.itemId, event)
     await db.innerwearEvents.delete(eventId)
   })
 }
@@ -180,4 +182,32 @@ export async function markClean(itemId: number) {
  *  laundry counter (spec §12), so returning from repair keeps the item honest. */
 export async function setItemState(itemId: number, state: ClothingItem['state']) {
   await db.items.update(itemId, { state, updatedAt: Date.now() })
+}
+
+/** Past-dated essentials record. Mirrors recordWear's historical mode: the
+ *  laundry counter is left alone because those clothes have already been washed.
+ *  Returns false when that day already holds a record, so an import spread over
+ *  past weeks never double-counts a day the user has already logged. */
+export async function recordHistoricalInnerwear(args: {
+  itemId: number
+  date: string
+  timestamp: number
+}): Promise<boolean> {
+  return db.transaction('rw', db.items, db.innerwearEvents, async () => {
+    const item = await db.items.get(args.itemId)
+    if (!item) throw new WearError('That item no longer exists.')
+    if (item.role !== 'INNERWEAR') throw new WearError(`${item.name} is not in that group.`)
+
+    const existing = await db.innerwearEvents.where('date').equals(args.date).first()
+    if (existing) return false
+
+    await db.innerwearEvents.add({
+      date: args.date,
+      timestamp: args.timestamp,
+      itemId: args.itemId,
+      source: 'HISTORICAL_IMPORT',
+    })
+    await db.items.update(args.itemId, applyWear(item, args.timestamp, true))
+    return true
+  })
 }
