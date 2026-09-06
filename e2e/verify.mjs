@@ -398,6 +398,59 @@ check('counters survive the round trip',
   state.items.find((i) => i.name === 'Cotton vest').lifetimeWears === 3)
 check('restore skipped onboarding entirely', await page.locator('.tabbar').isVisible())
 
+console.log('\n--- native (Capacitor) export path ---')
+// A stand-in for the bridge Capacitor injects into the WebView, so the native
+// branch is exercised for real rather than assumed. It records what the app asked
+// the plugins to do, and makes the first directory fail to prove the fallback.
+await page.addInitScript(() => {
+  window.__nativeCalls = { writes: [], shares: [] }
+  window.Capacitor = {
+    isNativePlatform: () => true,
+    Plugins: {
+      Filesystem: {
+        async writeFile(options) {
+          window.__nativeCalls.writes.push({
+            path: options.path, directory: options.directory,
+            encoding: options.encoding, length: options.data.length,
+          })
+          if (options.directory === 'DOCUMENTS') throw new Error('permission denied')
+          return { uri: `file:///storage/emulated/0/${options.directory}/${options.path}` }
+        },
+      },
+      Share: {
+        async share(options) { window.__nativeCalls.shares.push(options) },
+      },
+    },
+  }
+})
+await nav('#/profile/backup')
+await page.waitForSelector('button:has-text("Save a backup file")')
+check('the app knows it is running natively',
+  /written to your device/.test(await page.locator('.tiny.faint', { hasText: 'One JSON file' }).innerText()))
+
+const nativeToast = await toastAfter(() => page.getByRole('button', { name: 'Save a backup file' }).click())
+const calls = await page.evaluate(() => window.__nativeCalls)
+check('no browser download was attempted natively', /Saved to/.test(nativeToast), nativeToast)
+check('it tried Documents first', calls.writes[0]?.directory === 'DOCUMENTS')
+check('a refused directory falls through to the next',
+  calls.writes.length === 2 && calls.writes[1].directory === 'EXTERNAL_STORAGE',
+  calls.writes.map((w) => w.directory).join(' -> '))
+check('the whole backup was handed to the plugin as utf8 text',
+  calls.writes[1].encoding === 'utf8' && calls.writes[1].length > 1000, String(calls.writes[1].length))
+check('the filename is the dated backup name', /^batte-backup-\d{4}-\d{2}-\d{2}/.test(calls.writes[1].path),
+  calls.writes[1].path)
+check('the share sheet was opened with the written file',
+  calls.shares.length === 1 && calls.shares[0].files?.[0] === calls.shares[0].url &&
+  /EXTERNAL_STORAGE/.test(calls.shares[0].url), JSON.stringify(calls.shares[0] ?? {}))
+check('the toast names the folder the file actually landed in',
+  /Internal storage/.test(nativeToast), nativeToast)
+check('and the screen says where to find it',
+  /Last backup written to/.test(await page.locator('.card', { hasText: 'Last backup written to' }).innerText()))
+
+// Back to a plain browser for anything that follows.
+await ctx.addInitScript(() => { delete window.Capacitor })
+await page.evaluate(() => { delete window.Capacitor })
+
 console.log('\n--- 5. A file that is not a backup is refused ---')
 fs.writeFileSync(`${TMP}/bad.json`, JSON.stringify({ hello: 'world' }))
 await nav('#/profile/backup')
