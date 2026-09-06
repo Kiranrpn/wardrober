@@ -10,7 +10,7 @@
 import { chromium } from 'playwright'
 import fs from 'node:fs'
 
-const URL = 'http://localhost:4173/'
+const URL = process.env.APP_URL ?? 'http://localhost:4173/'
 const TMP = fs.mkdtempSync('/tmp/batte-e2e-')
 const PHOTO = `${TMP}/photo.png`
 const BACKUP = `${TMP}/backup.json`
