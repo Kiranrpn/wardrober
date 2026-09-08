@@ -6,7 +6,19 @@ export type WearSource =
   | 'TODAY_RECOMMENDATION'
   | 'GENERATE_PAIR'
   | 'MANUAL'
+  /** Repeat of an earlier pair, taken from Today's recent wears. */
+  | 'WEAR_AGAIN'
   | 'HISTORICAL_IMPORT'
+
+/** How a wear came to be recorded, for the recent-wears list. Nothing branches on
+ *  these, so an unknown source from an older or newer backup just goes unlabelled. */
+export const WEAR_SOURCE_LABEL: Record<WearSource, string> = {
+  TODAY_RECOMMENDATION: 'Recommended',
+  GENERATE_PAIR: 'Generated',
+  MANUAL: 'Logged',
+  WEAR_AGAIN: 'Worn again',
+  HISTORICAL_IMPORT: 'Imported',
+}
 
 export interface Category {
   id?: number
