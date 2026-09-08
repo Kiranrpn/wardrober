@@ -21,13 +21,19 @@ anywhere in the app, each with **Wear again** and an `✕` that removes the reco
 **Wardrobe** holds your clothes, laundry, repairs, retired items, compatibility, search,
 and a free-use **Generate pair** for any category, including ones you left out of Today.
 
-**Profile** configures your name, which categories feed Today, your categories and
-clothing types, statistics, theme, backup and restore, and app settings.
+**Profile** configures your name, which categories feed Today, and your categories and
+clothing types. It also holds **Statistics** (wardrobe value, average cost per wear, most
+and least worn, highest cost per wear and most used pairs), **Import past wears**, backup
+and restore, theme, and the rest of the app settings.
 
-**Setup** asks two things before anything else: your name, and what you want to call the
-three roles. `Top`, `Bottom` and `Essentials` are pre-filled as suggestions, so `Next`
-alone accepts them. The same screen offers **Restore from a backup file**, because a fresh
-install and a wardrobe that was just reset are exactly when someone reaches for one.
+**Setup** is three screens. The first asks your name and what you want to call the three
+roles; `Top`, `Bottom` and `Essentials` are pre-filled as suggestions, so `Next` alone
+accepts them, and it is also where **Restore from a backup file** lives, because a fresh
+install and a wardrobe that was just reset are exactly when someone reaches for one. The
+second edits the starting categories, and the third picks which of them feed the automatic
+Today recommendation. The name and role names are saved on leaving the first screen rather
+than at the end, so quitting halfway does not discard what was already typed; the
+categories are written when you finish.
 
 ## Design decisions worth knowing
 
@@ -93,8 +99,12 @@ any one of them recomputes last-worn from every kind that remains.
 ## Data and privacy
 
 Everything lives in IndexedDB on the device. There is no account, no server, and no
-network call. Photos are downscaled to 900px and re-encoded as JPEG before storage.
-Clearing site data erases the wardrobe, so keep a backup.
+network call. Photos are downscaled to 900px and re-encoded as JPEG at quality 0.82 before
+storage. Clearing site data erases the wardrobe, and a browser is free to evict
+best-effort origin storage on its own when a device runs short, so keep a backup. The app
+does not yet ask for durable storage through `navigator.storage.persist()`; installing it
+to the home screen, which is what makes most browsers treat the data as persistent, is
+currently the strongest protection there is.
 
 **Backup and restore** live in Profile. Export writes one JSON file holding settings,
 categories, clothing types, every item and every wear record. Photos are included by
@@ -127,7 +137,8 @@ npm run lint
 
 There is no unit test suite. `e2e/verify.mjs` drives a real browser through setup, adding
 clothes, importing past wears, the backup round trip and a wiped-then-restored device, and
-asserts against IndexedDB directly. Playwright is deliberately not a dependency of the app:
+asserts against IndexedDB directly. Recent wears is not in that script yet. Playwright is
+deliberately not a dependency of the app:
 
 ```bash
 npm i -D playwright && npx playwright install chromium
@@ -170,8 +181,11 @@ src/
 
 The rotation engine in `src/lib/recommend.ts` is a pure function: give it items,
 compatibility, wear events and the eligible categories, and it returns every valid pair
-ranked best-first. All the wardrobe-mutating logic lives in `src/lib/wear.ts` and runs in
-a single transaction per wear.
+ranked best-first. Every wear and every reversal goes through `src/lib/wear.ts`, one
+transaction per record, which is what keeps counts, last-worn dates and laundry state from
+drifting away from the event log. Ordinary edits (adding an item, renaming a category,
+toggling a compatibility pair) write to Dexie from their own screens: the single-entry rule
+is about wear records, not about every write.
 
 ## Not in this version
 
