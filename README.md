@@ -14,7 +14,9 @@ add them.
 **Today** shows one recommended top and bottom per enabled category, plus one innerwear
 suggestion for the day. Wear it and that category collapses to "You're wearing today"
 with **Generate again** and **Cancel**; it does not ask you again until tomorrow. A
-laundry basket in the header carries a live count of what is waiting to be washed.
+laundry basket in the header carries a live count of what is waiting to be washed, and a
+clock beside it opens **Recent wears**: the last five pairs you actually wore, from
+anywhere in the app, each with **Wear again** and an `✕` that removes the record.
 
 **Wardrobe** holds your clothes, laundry, repairs, retired items, compatibility, search,
 and a free-use **Generate pair** for any category, including ones you left out of Today.
@@ -43,7 +45,17 @@ the database untouched. Counts, laundry state and history change only on `Wear i
 **One pair per category per day.** Once you wear a category's pair, Today stops offering
 that category until tomorrow. The trade is that a genuine second session in the same
 category, lounge clothes in the morning and again at night, is not offered automatically;
-log it through `Log what I wore` so wear counts and laundry thresholds stay accurate.
+log it through `Log what I wore` or `Recent wears` so wear counts and laundry thresholds
+stay accurate. A second wear in a category is kept in full and the card shows the newest
+one, so `Cancel` and `Generate again` reverse what actually went on last.
+
+**Recent wears is the event log, not a favourites list.** It reads the same wear events
+every screen writes, so a pair worn from Today, one worn from `Generate pair` in the
+wardrobe and one logged by hand all appear together, newest first, labelled with where
+they came from. `Wear again` is an ordinary wear dated today: both items are incremented,
+laundry thresholds apply, and it carries the original pair's category. `✕` asks once and
+then reverses the record exactly as `Cancel` does. Repeats are listed individually rather
+than collapsed by pair, so what you delete is the record you are looking at.
 
 **Undo is a real reversal, not a second write.** `Cancel`, `Generate again` and deleting
 a wear from an item's history all decrement both items, recompute last-worn from the

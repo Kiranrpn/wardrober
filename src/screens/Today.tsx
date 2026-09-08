@@ -16,6 +16,7 @@ import {
 import { failureCopy, recommendInnerwear, recommendPairs } from '../lib/recommend'
 import { recordWear, setTodaysInnerwear, undoInnerwear, undoWear, WearError } from '../lib/wear'
 import { LogWhatIWore } from './LogWhatIWore'
+import { RecentWears } from './RecentWears'
 
 export function Today() {
   const items = useItems()
@@ -32,6 +33,7 @@ export function Today() {
   const [cursors, setCursors] = useState<Record<number, number>>({})
   const [seeds, setSeeds] = useState<Record<number, number>>({})
   const [logging, setLogging] = useState(false)
+  const [recents, setRecents] = useState(false)
   const [busy, setBusy] = useState(false)
 
   const today = todayKey()
@@ -40,12 +42,15 @@ export function Today() {
     [categories],
   )
 
+  // Newest wins: wearing something again logs a second event for the same category
+  // and day, and the card should show what actually went on last, so Cancel and
+  // Generate again reverse that one rather than the morning's.
   const wornTodayByCategory = useMemo(() => {
     const map = new Map<number, WearEvent>()
     for (const e of wearEvents ?? []) {
-      if (e.date === today && e.categoryId !== undefined && !map.has(e.categoryId)) {
-        map.set(e.categoryId, e)
-      }
+      if (e.date !== today || e.categoryId === undefined) continue
+      const shown = map.get(e.categoryId)
+      if (!shown || e.timestamp > shown.timestamp) map.set(e.categoryId, e)
     }
     return map
   }, [wearEvents, today])
@@ -135,6 +140,9 @@ export function Today() {
                 : `${doneCount} of ${todayCategories.length} sorted`}
           </div>
         </div>
+        <button className="icon-btn" onClick={() => setRecents(true)} aria-label="Recent wears">
+          🕘
+        </button>
         <Link className="icon-btn" to="/wardrobe/laundry" aria-label={`Laundry, ${laundryCount}`}>
           🧺
           {laundryCount > 0 && <span className="count">{laundryCount}</span>}
@@ -214,6 +222,15 @@ export function Today() {
 
       <Sheet open={logging} title="Log what I wore" onClose={() => setLogging(false)}>
         <LogWhatIWore onDone={() => setLogging(false)} />
+      </Sheet>
+
+      <Sheet open={recents} title="Recent wears" onClose={() => setRecents(false)}>
+        <RecentWears
+          events={wearEvents}
+          items={items}
+          categories={categories}
+          onWorn={() => setRecents(false)}
+        />
       </Sheet>
     </div>
   )
