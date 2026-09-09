@@ -230,6 +230,7 @@ export function Today() {
           items={items}
           categories={categories}
           onWorn={() => setRecents(false)}
+          onLeave={() => setRecents(false)}
         />
       </Sheet>
     </div>

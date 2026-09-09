@@ -188,11 +188,26 @@ export async function undoInnerwear(eventId: number) {
   })
 }
 
+/** Closes a laundry cycle: logs the wash, then resets the counter. The reset is
+ *  what the app has always done; the log is what makes it readable afterwards.
+ *  Only ever called for an item coming out of laundry, never for one coming back
+ *  from repair, or the ledger would fill with washes that never happened. */
 export async function markClean(itemId: number) {
-  await db.items.update(itemId, {
-    state: 'AVAILABLE',
-    wearsSinceLaundry: 0,
-    updatedAt: Date.now(),
+  const timestamp = Date.now()
+  return db.transaction('rw', db.items, db.washEvents, async () => {
+    const item = await db.items.get(itemId)
+    if (!item) return
+    await db.washEvents.add({
+      itemId,
+      date: todayKey(new Date(timestamp)),
+      timestamp,
+      wearsAtWash: item.wearsSinceLaundry,
+    })
+    await db.items.update(itemId, {
+      state: 'AVAILABLE',
+      wearsSinceLaundry: 0,
+      updatedAt: timestamp,
+    })
   })
 }
 

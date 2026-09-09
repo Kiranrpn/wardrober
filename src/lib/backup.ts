@@ -7,11 +7,12 @@ import type {
   InnerwearWearEvent,
   Settings,
   SoloWearEvent,
+  WashEvent,
   WearEvent,
 } from '../db/types'
 
 export const BACKUP_FORMAT = 'batte-backup'
-export const BACKUP_VERSION = 2
+export const BACKUP_VERSION = 3
 
 /** A photo travelling as text. Kept as an object rather than a bare string so a
  *  future format can carry a different encoding without guessing. */
@@ -39,6 +40,8 @@ export interface BackupFile {
     innerwearEvents: InnerwearWearEvent[]
     /** Absent in version 1 files, which predate solo wears. */
     soloWearEvents?: SoloWearEvent[]
+    /** Absent before version 3, which is when laundry became an event log. */
+    washEvents?: WashEvent[]
   }
 }
 
@@ -76,6 +79,7 @@ export async function buildBackup(includePhotos: boolean): Promise<BackupFile> {
     wearEvents,
     innerwearEvents,
     soloWearEvents,
+    washEvents,
   ] = await Promise.all([
       db.settings.toArray(),
       db.categories.toArray(),
@@ -85,6 +89,7 @@ export async function buildBackup(includePhotos: boolean): Promise<BackupFile> {
       db.wearEvents.toArray(),
       db.innerwearEvents.toArray(),
       db.soloWearEvents.toArray(),
+      db.washEvents.toArray(),
     ])
 
   const exportedItems: ExportedItem[] = await Promise.all(
@@ -107,6 +112,7 @@ export async function buildBackup(includePhotos: boolean): Promise<BackupFile> {
       wearEvents: wearEvents.length,
       innerwearEvents: innerwearEvents.length,
       soloWearEvents: soloWearEvents.length,
+      washEvents: washEvents.length,
       photos: items.filter((i) => i.photo).length,
     },
     data: {
@@ -118,6 +124,7 @@ export async function buildBackup(includePhotos: boolean): Promise<BackupFile> {
       wearEvents,
       innerwearEvents,
       soloWearEvents,
+      washEvents,
     },
   }
 }
@@ -194,6 +201,7 @@ export async function restoreBackup(file: BackupFile): Promise<RestoreSummary> {
       db.wearEvents,
       db.innerwearEvents,
       db.soloWearEvents,
+      db.washEvents,
     ],
     async () => {
       await Promise.all([
@@ -205,6 +213,7 @@ export async function restoreBackup(file: BackupFile): Promise<RestoreSummary> {
         db.wearEvents.clear(),
         db.innerwearEvents.clear(),
         db.soloWearEvents.clear(),
+        db.washEvents.clear(),
       ])
 
       // bulkPut keeps the inbound ids, so compatibility rows and wear events still
@@ -217,6 +226,8 @@ export async function restoreBackup(file: BackupFile): Promise<RestoreSummary> {
       await db.innerwearEvents.bulkPut(file.data.innerwearEvents)
       // Version 1 files have none; the table is simply left empty.
       await db.soloWearEvents.bulkPut(file.data.soloWearEvents ?? [])
+      // Same for wash records, which arrived in version 3.
+      await db.washEvents.bulkPut(file.data.washEvents ?? [])
 
       // A backup with no settings row would leave the app with nothing to read,
       // so one is rebuilt with setup already marked done.

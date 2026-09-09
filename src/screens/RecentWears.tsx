@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useToast } from '../components/toast'
 import { Thumb } from '../components/ui'
 import type { Category, ClothingItem, WearEvent } from '../db/types'
@@ -15,12 +16,15 @@ export function RecentWears({
   items,
   categories,
   onWorn,
+  onLeave,
 }: {
   events: WearEvent[]
   items: ClothingItem[]
   categories: Category[]
   /** Lets Today close the sheet once a repeat is recorded, so the change is visible. */
   onWorn?: () => void
+  /** Called when the calendar takes over, so the sheet is not left open behind it. */
+  onLeave?: () => void
 }) {
   const toast = useToast()
   const [busy, setBusy] = useState(false)
@@ -69,16 +73,36 @@ export function RecentWears({
     }
   }
 
+  const calendarTile = (
+    <Link className="list-tile" to="/history" onClick={() => onLeave?.()}>
+      <span style={{ fontSize: 19 }}>🗓️</span>
+      <span className="grow">
+        <span style={{ fontWeight: 600 }}>Wear calendar</span>
+        <span className="tiny faint" style={{ display: 'block' }}>
+          Every day you have logged, with wear again and delete
+        </span>
+      </span>
+      <span className="arrow">›</span>
+    </Link>
+  )
+
   if (recent.length === 0) {
     return (
-      <div className="card small muted">
-        Nothing worn yet. Wear a pair from Today or from Generate pair and it shows up here.
+      <div className="stack tight">
+        {calendarTile}
+        <div className="card small muted">
+          Nothing worn yet. Wear a pair from Today or from Generate pair and it shows up here.
+        </div>
       </div>
     )
   }
 
   return (
     <div className="stack tight">
+      {calendarTile}
+      <div className="section-label" style={{ margin: 0 }}>
+        Last {recent.length}
+      </div>
       {recent.map((event) => {
         const top = items.find((i) => i.id === event.topId)
         const bottom = items.find((i) => i.id === event.bottomId)
@@ -141,7 +165,7 @@ export function RecentWears({
 
       <div className="tiny faint">
         Wearing again counts fully: both items are incremented and laundry thresholds apply.
-        Deleting a record reverses it the same way Cancel does.
+        Deleting a record reverses it the same way Cancel does. Older days are in the calendar.
       </div>
     </div>
   )

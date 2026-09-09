@@ -106,6 +106,20 @@ export interface InnerwearWearEvent {
   source: WearSource
 }
 
+/** One completed laundry cycle for one item, written when the item is marked
+ *  clean. Until this existed, washing an item destroyed the only record of it by
+ *  resetting `wearsSinceLaundry` to zero, which left laundry as the one part of
+ *  the app whose history could not be read back. `wearsAtWash` is the length of
+ *  the cycle this wash closes, so the observed cycle can be compared against the
+ *  item's configured `laundryThreshold` without replaying the wear log. */
+export interface WashEvent {
+  id?: number
+  itemId: number
+  date: string
+  timestamp: number
+  wearsAtWash: number
+}
+
 export type ThemeChoice = 'system' | 'light' | 'dark'
 
 export interface Settings {
