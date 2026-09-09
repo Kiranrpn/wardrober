@@ -127,13 +127,13 @@ const dump = () => page.evaluate(async () => {
     const r = db.transaction(s).objectStore(s).getAll()
     r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error)
   })
-  const [items, wearEvents, innerwearEvents, soloWearEvents, settings, categories] =
+  const [items, wearEvents, innerwearEvents, soloWearEvents, washEvents, settings, categories] =
     await Promise.all(
-      ['items', 'wearEvents', 'innerwearEvents', 'soloWearEvents', 'settings', 'categories'].map(read))
+      ['items', 'wearEvents', 'innerwearEvents', 'soloWearEvents', 'washEvents', 'settings', 'categories'].map(read))
   db.close()
   return {
     items: items.map(({ photo, ...i }) => ({ ...i, photoSize: photo ? photo.size : 0 })),
-    wearEvents, innerwearEvents, soloWearEvents, settings, categories,
+    wearEvents, innerwearEvents, soloWearEvents, washEvents, settings, categories,
   }
 })
 
@@ -319,6 +319,123 @@ check('solo record removed', state.soloWearEvents.length === 5)
 check('last-worn recomputed across pair and solo records together',
   typeof afterUndo.lastWornAt === 'number')
 
+console.log('\n--- laundry is an event log, not just a counter reset ---')
+await nav('#/')
+await page.waitForSelector('.tabbar')
+await page.waitForTimeout(400)
+if (await page.getByRole('button', { name: 'Wear it' }).count()) {
+  await toastAfter(() => page.getByRole('button', { name: 'Wear it' }).first().click())
+}
+state = await dump()
+const washShirt = state.items.find((i) => i.name === 'Blue shirt')
+const cycleLength = washShirt.wearsSinceLaundry
+const washesBefore = state.washEvents.length
+check('a wear moved the laundry counter, so there is a cycle to close', cycleLength > 0, String(cycleLength))
+
+await nav(`#/wardrobe/items/${washShirt.id}`)
+await page.waitForSelector('button:has-text("Send to laundry")')
+await toastAfter(() => page.getByRole('button', { name: 'Send to laundry' }).click())
+await toastAfter(() => page.getByRole('button', { name: 'Mark clean' }).click())
+state = await dump()
+check('marking clean writes a wash record', state.washEvents.length === washesBefore + 1,
+  String(state.washEvents.length))
+const wash = state.washEvents[state.washEvents.length - 1]
+check('the record carries the cycle it closed',
+  wash.itemId === washShirt.id && wash.wearsAtWash === cycleLength, JSON.stringify(wash))
+const cleaned = state.items.find((i) => i.name === 'Blue shirt')
+check('and the counter still resets exactly as before',
+  cleaned.wearsSinceLaundry === 0 && cleaned.state === 'AVAILABLE')
+
+await toastAfter(() => page.getByRole('button', { name: 'Send to repair' }).click())
+await toastAfter(() => page.getByRole('button', { name: 'Mark available' }).click())
+state = await dump()
+check('coming back from repair is not logged as a wash',
+  state.washEvents.length === washesBefore + 1, String(state.washEvents.length))
+check('and repair still leaves the laundry counter alone',
+  state.items.find((i) => i.name === 'Blue shirt').wearsSinceLaundry === 0)
+
+await nav(`#/wardrobe/items/${washShirt.id}`)
+await page.waitForSelector('.card:has-text("Times washed")')
+const laundryCard = await page.locator('.card', { hasText: 'Times washed' }).first().innerText()
+check('the item page reads the wash log back', /Times washed\s*\|?\s*1/.test(laundryCard.replace(/\n/g, ' ')),
+  laundryCard.replace(/\n/g, ' '))
+check('and reports the observed cycle length',
+  new RegExp(`Wears per wash\\s*\\|?\\s*${cycleLength}`).test(laundryCard.replace(/\n/g, ' ')),
+  laundryCard.replace(/\n/g, ' '))
+
+console.log('\n--- 6. Wear calendar behind the history icon ---')
+await nav('#/')
+await page.waitForSelector('.tabbar')
+await page.getByRole('button', { name: 'Recent wears' }).click()
+await page.waitForSelector('.sheet')
+check('the history sheet offers the calendar',
+  (await page.locator('.sheet a[href="#/history"]').count()) === 1)
+check('and still lists the recent few underneath',
+  /^last /i.test(await page.locator('.sheet .section-label').first().innerText()),
+  await page.locator('.sheet .section-label').first().innerText())
+check('never more than five recent cards',
+  (await page.locator('.sheet .card').count()) <= 5,
+  String(await page.locator('.sheet .card').count()))
+
+await page.locator('.sheet a[href="#/history"]').click()
+await page.waitForSelector('.cal-grid')
+check('the calendar opens as its own screen',
+  (await page.locator('.topbar h1').first().innerText()) === 'Wear calendar')
+check('today starts selected', (await page.locator('.cal-day.on').count()) === 1)
+check('days holding records are marked', (await page.locator('.cal-day.has').count()) > 0)
+
+// Solo import days hold nothing but solo records, so a repeat there is unambiguous.
+const soloDay = [...state.soloWearEvents].sort((a, b) => a.date.localeCompare(b.date))[0].date
+const [sy, sm, sd] = soloDay.split('-').map(Number)
+const nowM = new Date()
+const monthsBack = nowM.getFullYear() * 12 + nowM.getMonth() - (sy * 12 + (sm - 1))
+for (let i = 0; i < monthsBack; i++) {
+  await page.getByRole('button', { name: 'Previous month' }).click()
+}
+await page.locator('.cal-day').nth(sd - 1).click()
+await page.waitForSelector('button:has-text("Wear again")')
+check('tapping a past day shows what was worn on it',
+  (await page.getByRole('button', { name: 'Wear again' }).count()) > 0)
+
+const beforeRepeat = await dump()
+await toastAfter(() => page.getByRole('button', { name: 'Wear again' }).first().click())
+state = await dump()
+check('wear again from the calendar logs a fresh record',
+  state.soloWearEvents.length === beforeRepeat.soloWearEvents.length + 1,
+  `${state.soloWearEvents.length} vs ${beforeRepeat.soloWearEvents.length}`)
+const repeat = [...state.soloWearEvents].sort((a, b) => b.id - a.id)[0]
+check('dated today rather than the day that was tapped',
+  repeat.source === 'WEAR_AGAIN' && repeat.date !== soloDay, JSON.stringify(repeat))
+
+const beforeCalDelete = await dump()
+await page.getByRole('button', { name: 'Delete this record' }).first().click()
+await toastAfter(() => page.getByRole('button', { name: 'Delete', exact: true }).click())
+state = await dump()
+check('deleting from the calendar reverses the record',
+  state.soloWearEvents.length === beforeCalDelete.soloWearEvents.length - 1,
+  String(state.soloWearEvents.length))
+
+console.log('\n--- 7. Statistics: rotation coverage and money over time ---')
+await nav('#/profile/statistics')
+await page.waitForSelector('.stat-grid')
+const statsText = (await page.locator('.screen').innerText()).replace(/\n/g, ' ')
+check('rotation coverage has its own section', /rotation coverage/i.test(statsText))
+check('pair coverage is stated against what the wardrobe allows',
+  /Pairs your wardrobe allows/.test(statsText) && /Pairs you have actually worn/.test(statsText))
+check('utilisation is reported over a window, not all time', /Worn in 30 days/.test(statsText))
+check('money over time has its own section', /money over time/i.test(statsText))
+check('dormant money is called out', /Items sitting still/.test(statsText))
+
+const leastWorn = await page.evaluate(() => {
+  const label = [...document.querySelectorAll('.section-label')]
+    .find((l) => l.textContent.trim() === 'Least worn')
+  const list = label?.nextElementSibling
+  return [...(list?.querySelectorAll('.item-row') ?? [])].map((r) =>
+    r.lastElementChild.textContent.trim())
+})
+check('least worn no longer just repeats the never-worn items',
+  leastWorn.every((n) => Number(n) > 0), leastWorn.join(','))
+
 console.log('\n--- 2. Export ---')
 await nav('#/profile/backup')
 await page.waitForSelector('button:has-text("Save a backup file")')
@@ -330,14 +447,16 @@ check('backup filename is date-stamped', /^batte-backup-\d{4}-\d{2}-\d{2}\.json$
   download.suggestedFilename())
 const backup = JSON.parse(fs.readFileSync(BACKUP, 'utf8'))
 state = await dump()
-check('format tag present', backup.format === 'batte-backup' && backup.version === 2)
+check('format tag present', backup.format === 'batte-backup' && backup.version === 3)
 check('settings exported', backup.data.settings[0].userName === 'Kiran' && backup.data.settings[0].roleLabels.INNERWEAR === 'Basics')
 check('items exported', backup.data.items.length === 3)
 check('wear events exported', backup.data.wearEvents.length === state.wearEvents.length)
 check('essentials events exported', backup.data.innerwearEvents.length === state.innerwearEvents.length)
 check('solo wears exported', backup.data.soloWearEvents.length === state.soloWearEvents.length,
   String(backup.data.soloWearEvents.length))
-check('backup version bumped for the new table', backup.version === 2)
+check('wash records exported', backup.data.washEvents.length === state.washEvents.length,
+  String(backup.data.washEvents.length))
+check('backup version bumped for the new table', backup.version === 3)
 check('categories exported', backup.data.categories.length === state.categories.length)
 check('photo exported as base64', backup.includesPhotos === true &&
   backup.data.items.find((i) => i.name === 'Blue shirt').photo?.encoding === 'base64')
@@ -363,6 +482,9 @@ await page.getByRole('button', { name: 'Yes, erase my wardrobe' }).click()
 await page.waitForFunction(() => document.querySelector('h1')?.textContent === 'Set up', null, { timeout: 20000 })
 state = await dump()
 check('reset emptied the wardrobe', state.items.length === 0 && state.wearEvents.length === 0)
+check('reset emptied every event table, not just pair wears',
+  state.soloWearEvents.length === 0 && state.innerwearEvents.length === 0 && state.washEvents.length === 0,
+  `${state.soloWearEvents.length}/${state.innerwearEvents.length}/${state.washEvents.length}`)
 check('a wiped wardrobe lands on setup', true)
 check('restore reachable from setup without completing onboarding first',
   (await page.getByRole('button', { name: 'Restore from a backup file' }).count()) === 1)
@@ -383,6 +505,7 @@ check('items restored', state.items.length === 3, String(state.items.length))
 check('wear events restored', state.wearEvents.length === backup.data.wearEvents.length)
 check('essentials events restored', state.innerwearEvents.length === backup.data.innerwearEvents.length)
 check('solo wears restored', state.soloWearEvents.length === backup.data.soloWearEvents.length)
+check('wash records restored', state.washEvents.length === backup.data.washEvents.length)
 check('restored solo records still resolve to a real item',
   state.soloWearEvents.every((e) => state.items.some((i) => i.id === e.itemId)))
 check('categories restored', state.categories.length === backup.data.categories.length)

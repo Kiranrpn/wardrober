@@ -7,6 +7,7 @@ import type {
   InnerwearWearEvent,
   Settings,
   SoloWearEvent,
+  WashEvent,
   WearEvent,
 } from './types'
 
@@ -18,6 +19,7 @@ export class WardroberDB extends Dexie {
   wearEvents!: Table<WearEvent, number>
   innerwearEvents!: Table<InnerwearWearEvent, number>
   soloWearEvents!: Table<SoloWearEvent, number>
+  washEvents!: Table<WashEvent, number>
   settings!: Table<Settings, number>
 
   constructor() {
@@ -35,6 +37,12 @@ export class WardroberDB extends Dexie {
     // every item and wear record already on the device.
     this.version(2).stores({
       soloWearEvents: '++id, date, timestamp, itemId',
+    })
+    // Laundry becomes an event log. Existing devices upgrade with an empty table:
+    // washes done before this version left no record to backfill, and inventing
+    // one from `wearsSinceLaundry` would date every past wash to the upgrade.
+    this.version(3).stores({
+      washEvents: '++id, date, timestamp, itemId',
     })
   }
 }

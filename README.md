@@ -16,13 +16,15 @@ suggestion for the day. Wear it and that category collapses to "You're wearing t
 with **Generate again** and **Cancel**; it does not ask you again until tomorrow. A
 laundry basket in the header carries a live count of what is waiting to be washed, and a
 clock beside it opens **Recent wears**: the last five pairs you actually wore, from
-anywhere in the app, each with **Wear again** and an `✕` that removes the record.
+anywhere in the app, each with **Wear again** and an `✕` that removes the record. The
+**Wear calendar** sits at the top of that sheet, for anything older than those five.
 
 **Wardrobe** holds your clothes, laundry, repairs, retired items, compatibility, search,
 and a free-use **Generate pair** for any category, including ones you left out of Today.
 
 **Profile** configures your name, which categories feed Today, your categories and
-clothing types, statistics, theme, backup and restore, and app settings.
+clothing types, statistics, theme, backup and restore, and app settings. **Statistics**
+reports rotation coverage and money over time alongside the item lists.
 
 **Setup** asks two things before anything else: your name, and what you want to call the
 three roles. `Top`, `Bottom` and `Essentials` are pre-filled as suggestions, so `Next`
@@ -69,6 +71,45 @@ used. Pair history is tracked separately from item history, so a shirt you wear 
 still surface with a trouser it rarely meets. A small random term breaks ties so the app
 does not feel deterministic.
 
+**Laundry is an event log, not a counter reset.** Marking an item clean has always set
+`wearsSinceLaundry` back to zero, which destroyed the only record that the wash happened;
+laundry was the one part of the app whose history could not be read back. Marking clean now
+also writes a wash record carrying the length of the cycle it closed, and an item's page
+shows how many times it has been washed, when it was last washed, and how many wears it
+actually goes between washes against the threshold set on it. Nothing else changed: no new
+button, no new step, and the counter resets exactly as before. Coming back from repair goes
+through a different path and is not a wash, so it writes nothing. Wash records are a log
+rather than a reversible transaction: the wears that followed have already moved the
+counter on, so there is no honest way to un-wash something, and they are kept as written.
+
+**The calendar reads the log; it does not keep its own.** Every wear kind lands on the day
+it was recorded for, so a day in the calendar shows the pairs, the solo wears and the
+essentials record together. `Wear again` there is an ordinary wear dated today, not the day
+you tapped, and `✕` reverses the record exactly as `Cancel` does.
+
+**Coverage, not counts.** Wear counts say which clothes are busy; they cannot say how much
+of the wardrobe the rotation is reaching. Statistics reports the share of items worn in the
+last thirty days, the share of the pairs your wardrobe actually allows that you have ever
+worn, and the share of recent wears coming from the five busiest items. All three are
+counted over everything not retired, so clothes sitting in the laundry basket today do not
+shrink the total and flatter the number, and a pair ruled out in compatibility leaves both
+sides of the pair figure at once.
+
+**Statistics reads the event log, not the counters on items.** The denormalised
+`lifetimeWears` on an item answers "how many times, ever" and nothing else. Every windowed
+or dated figure, the calendar, coverage over thirty days, dormant money and the cost per
+wear line, is computed from the wear, solo and essentials tables instead. `Least worn` also
+excludes never-worn items now, because it was otherwise the same list as the `Never worn`
+tile beside it until every last item had been worn once.
+
+**Money is reported over time, not just as a total.** Spend by year comes from purchase
+dates, retired items included, because what a wardrobe cost does not stop being true when
+something leaves it. The cost per wear line is a running portfolio figure: everything bought
+by the end of each month divided by every wear recorded by then, so it falls as clothes get
+worn and steps up when something new arrives. Items with a price but no purchase date cannot
+sit on a timeline and are counted out loud beside the chart rather than folded in at month
+zero.
+
 **Retire, do not delete.** Retired items leave the rotation and keep every wear record,
 so lifetime cost per wear stays honest. Deleting a category detaches it from items and
 keeps the wear history intact.
@@ -97,7 +138,8 @@ network call. Photos are downscaled to 900px and re-encoded as JPEG before stora
 Clearing site data erases the wardrobe, so keep a backup.
 
 **Backup and restore** live in Profile. Export writes one JSON file holding settings,
-categories, clothing types, every item and every wear record. Photos are included by
+categories, clothing types, every item, every wear record and every wash record. Photos are
+included by
 default as base64, which inflates them by about a third; turn that off for a file a few
 hundred KB instead of several MB, and those items come back showing their emoji or first
 letter. Where the file goes depends on how the app is running. Installed from the APK it is
@@ -165,7 +207,7 @@ src/
   db/          Dexie schema, entity types, seeding
   lib/         rotation engine, wear transactions, statistics, hooks
   components/  shared UI primitives
-  screens/     Today, Wardrobe, Profile, onboarding
+  screens/     Today, Wear calendar, Wardrobe, Profile, onboarding
 ```
 
 The rotation engine in `src/lib/recommend.ts` is a pure function: give it items,

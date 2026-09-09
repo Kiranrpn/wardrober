@@ -35,9 +35,22 @@ export function Settings() {
     updateSettings({ roleLabels: { ...settings.roleLabels, [role]: value } })
 
   async function reset() {
+    // Every table, or a reset leaves records pointing at items that no longer
+    // exist: solo wears were already being missed here before wash records
+    // joined them.
     await db.transaction(
       'rw',
-      [db.items, db.categories, db.clothingTypes, db.compatibility, db.wearEvents, db.innerwearEvents, db.settings],
+      [
+        db.items,
+        db.categories,
+        db.clothingTypes,
+        db.compatibility,
+        db.wearEvents,
+        db.innerwearEvents,
+        db.soloWearEvents,
+        db.washEvents,
+        db.settings,
+      ],
       async () => {
         await Promise.all([
           db.items.clear(),
@@ -46,6 +59,8 @@ export function Settings() {
           db.compatibility.clear(),
           db.wearEvents.clear(),
           db.innerwearEvents.clear(),
+          db.soloWearEvents.clear(),
+          db.washEvents.clear(),
           db.settings.clear(),
         ])
       },

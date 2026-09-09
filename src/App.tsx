@@ -6,6 +6,7 @@ import { useSettings } from './lib/hooks'
 import { applyTheme } from './lib/theme'
 import { Onboarding } from './screens/Onboarding'
 import { Today } from './screens/Today'
+import { WearCalendar } from './screens/WearCalendar'
 import { Backup } from './screens/profile/Backup'
 import { Categories } from './screens/profile/Categories'
 import { ClothingTypes } from './screens/profile/ClothingTypes'
@@ -60,6 +61,7 @@ export default function App() {
       <div className="app">
         <Routes>
           <Route path="/" element={<Today />} />
+          <Route path="/history" element={<WearCalendar />} />
           <Route path="/wardrobe" element={<WardrobeHome />} />
           <Route path="/wardrobe/items" element={<ItemList title="All items" />} />
           <Route path="/wardrobe/items/:id" element={<ItemDetail />} />

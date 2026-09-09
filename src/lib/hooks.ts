@@ -52,6 +52,10 @@ export function useInnerwearEvents() {
   return useLiveQuery(() => db.innerwearEvents.toArray(), [])
 }
 
+export function useWashEvents() {
+  return useLiveQuery(() => db.washEvents.toArray(), [])
+}
+
 export function useItem(id?: number) {
   return useLiveQuery(() => (id === undefined ? undefined : db.items.get(id)), [id])
 }

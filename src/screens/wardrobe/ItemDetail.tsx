@@ -12,9 +12,10 @@ import {
   useRoleLabels,
   useSettings,
   useSoloWearEvents,
+  useWashEvents,
   useWearEvents,
 } from '../../lib/hooks'
-import { costPerWear, money } from '../../lib/stats'
+import { costPerWear, money, washSummary } from '../../lib/stats'
 import { markClean, setItemState, undoInnerwear, undoSoloWear, undoWear } from '../../lib/wear'
 import { ScreenHeader } from './ScreenHeader'
 
@@ -39,12 +40,21 @@ export function ItemDetail() {
   const wearEvents = useWearEvents()
   const innerwearEvents = useInnerwearEvents()
   const soloEvents = useSoloWearEvents()
+  const washEvents = useWashEvents()
   const settings = useSettings()
   const roleLabels = useRoleLabels()
   const navigate = useNavigate()
   const toast = useToast()
 
   const [pendingDelete, setPendingDelete] = useState<HistoryRow | null>(null)
+
+  /** Marking an item clean has always reset its counter; since it also writes a
+   *  wash record, the cycles it closed can be read back here. */
+  const washes = useMemo(
+    () => (washEvents ?? []).filter((e) => e.itemId === itemId).sort((a, b) => b.timestamp - a.timestamp),
+    [washEvents, itemId],
+  )
+  const laundry = useMemo(() => washSummary(washes), [washes])
 
   /** An item can be worn as half of a pair, on its own, or as the day's essentials.
    *  All three belong in one list, newest first, or deleting the wrong kind of
@@ -102,7 +112,10 @@ export function ItemDetail() {
   const itemCategories = (categories ?? []).filter((c) => item.categoryIds.includes(c.id!))
 
   async function change(state: 'LAUNDRY' | 'REPAIR' | 'RETIRED' | 'AVAILABLE') {
-    if (state === 'AVAILABLE') await markClean(itemId)
+    // Only a return from laundry is a wash. Coming back from repair goes through
+    // setItemState, which leaves the laundry counter alone (spec §12) and now
+    // also keeps a wash that never happened out of the ledger.
+    if (state === 'AVAILABLE' && item!.state === 'LAUNDRY') await markClean(itemId)
     else await setItemState(itemId, state)
     toast(
       state === 'AVAILABLE'
@@ -229,6 +242,61 @@ export function ItemDetail() {
             </button>
           )}
         </div>
+
+        <div className="section-label">Laundry</div>
+        {laundry.washes === 0 ? (
+          <div className="card small muted">
+            No wash recorded yet. Marking this item clean logs one, so its real cycle can be
+            compared against the {item.laundryThreshold}-wear threshold set on it.
+          </div>
+        ) : (
+          <>
+            <div className="card">
+              <div className="kv">
+                <span className="k">Times washed</span>
+                <span>{laundry.washes}</span>
+              </div>
+              <div className="kv">
+                <span className="k">Last washed</span>
+                <span>{relativeDay(laundry.lastWashedAt)}</span>
+              </div>
+              <div className="kv">
+                <span className="k">Wears per wash</span>
+                <span>
+                  {laundry.averageWearsPerWash === null
+                    ? '—'
+                    : Math.round(laundry.averageWearsPerWash * 10) / 10}
+                </span>
+              </div>
+            </div>
+            {laundry.averageWearsPerWash !== null &&
+              item.laundryThreshold > 0 &&
+              Math.abs(laundry.averageWearsPerWash - item.laundryThreshold) >= 1 && (
+                <div className="tiny faint">
+                  You actually wash this after about{' '}
+                  {Math.round(laundry.averageWearsPerWash * 10) / 10} wears, and its threshold is
+                  set to {item.laundryThreshold}. Editing the threshold to match makes Today stop
+                  offering it at the right moment.
+                </div>
+              )}
+            <div className="card">
+              {washes.slice(0, 12).map((w) => (
+                <div className="kv" key={w.id}>
+                  <span className="k">{formatDate(w.date)}</span>
+                  <span className="small">
+                    {w.wearsAtWash === 0
+                      ? 'no wears since the last wash'
+                      : `after ${w.wearsAtWash} wear${w.wearsAtWash === 1 ? '' : 's'}`}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="tiny faint">
+              Wash records are a log, not a counter: they are kept as written and are not
+              reversed, because the wears that followed have already moved the counter on.
+            </div>
+          </>
+        )}
 
         <div className="section-label">Recent wears</div>
         {history.length === 0 ? (
