@@ -127,9 +127,7 @@ export function Statistics() {
         </div>
       </div>
       <div className="tiny faint">
-        Counted over everything not retired, so clothes sitting in the laundry basket today do
-        not shrink the total and flatter the percentage. A pair ruled out in compatibility
-        leaves both sides of the figure.
+        Counted over everything not retired.
       </div>
 
       {rotation.busiest.length > 0 && (
@@ -366,8 +364,7 @@ function SpendBars({ rows, currency }: { rows: SpendYear[]; currency: string }) 
         </div>
       ))}
       <div className="tiny faint">
-        {rows.reduce((s, r) => s + r.items, 0)} dated purchases, retired items included: what a
-        wardrobe cost does not stop being true when something leaves it.
+        {rows.reduce((s, r) => s + r.items, 0)} dated purchases, retired items included.
       </div>
     </div>
   )
