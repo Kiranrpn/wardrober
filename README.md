@@ -65,11 +65,24 @@ events that remain, and lift anything that wear pushed into laundry back out. Co
 never drift from the event log. The one exception is the tracking-number override on the
 edit form, which changes a count without touching history and says so.
 
-**Rotation balances four things**: how recently each item was worn, how much each has been
-worn in total, how often that exact pair has been used, and how recently that pair was
-used. Pair history is tracked separately from item history, so a shirt you wear often can
-still surface with a trouser it rarely meets. A small random term breaks ties so the app
-does not feel deterministic.
+**Rotation balances four things**: how recently each item was worn (45%), how often it was
+worn in the last 90 days (20%), how recently that exact pair was used (20%), and how often
+that pair was used in the last 90 days (10%). Pair history is tracked separately from item
+history, so a shirt you wear often can still surface with a trouser it rarely meets. A small
+random term (5%) breaks ties so the app does not feel deterministic.
+
+**Usage is recent, not lifetime.** Ranking on lifetime counts meant a new item outranked
+everything until it caught up with clothes that had years of wear, and imported history
+benched an old favourite for good. Counting only the last 90 days, item-only imported wears
+included, lets old and new clothes compete on how they are being worn now. Recency rises on
+a log curve out to 180 days rather than stopping at a month, so 2 days and 20 days stay far
+apart and something untouched for half a year still outranks something rested for five
+weeks.
+
+**Essentials rotate; they are not scored.** They are interchangeable, so Today suggests
+whichever available one has waited longest, never-worn first, ties by the order they were
+added. No usage term and no randomness: a new pack takes its turn once and joins the queue
+rather than holding the front of it, and something back from the wash rejoins in its place.
 
 **Laundry is an event log, not a counter reset.** Marking an item clean has always set
 `wearsSinceLaundry` back to zero, which destroyed the only record that the wash happened;
