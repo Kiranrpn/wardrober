@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useToast } from '../components/toast'
 import { Empty, ItemRow, Photo, Sheet, Thumb } from '../components/ui'
-import type { Category, ClothingItem, RoleLabels, WearEvent } from '../db/types'
+import type { Category, ClothingItem, RoleLabels, SoloWearEvent, WearEvent } from '../db/types'
 import { relativeDay, todayKey } from '../lib/dates'
 import {
   useCategories,
@@ -11,6 +11,7 @@ import {
   useItems,
   useRoleLabels,
   useSettings,
+  useSoloWearEvents,
   useWearEvents,
 } from '../lib/hooks'
 import { failureCopy, recommendInnerwear, recommendPairs } from '../lib/recommend'
@@ -23,6 +24,7 @@ export function Today() {
   const categories = useCategories()
   const compatibility = useCompatibility()
   const wearEvents = useWearEvents()
+  const soloWearEvents = useSoloWearEvents()
   const innerwearEvents = useInnerwearEvents()
   const settings = useSettings()
   const roleLabels = useRoleLabels()
@@ -73,7 +75,7 @@ export function Today() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, todaysInnerwearEvent, seeds])
 
-  if (!items || !categories || !settings || !wearEvents || !compatibility) {
+  if (!items || !categories || !settings || !wearEvents || !soloWearEvents || !compatibility) {
     return <div className="screen" />
   }
 
@@ -180,6 +182,7 @@ export function Today() {
                 items={items}
                 compatibility={compatibility}
                 wearEvents={wearEvents}
+                soloWearEvents={soloWearEvents}
                 impliedCompatibility={settings.impliedCompatibility}
                 cursor={cursors[category.id!] ?? 0}
                 seed={seeds[category.id!] ?? 0}
@@ -242,6 +245,7 @@ function RecommendationCard({
   items,
   compatibility,
   wearEvents,
+  soloWearEvents,
   impliedCompatibility,
   cursor,
   seed,
@@ -254,6 +258,7 @@ function RecommendationCard({
   items: ClothingItem[]
   compatibility: Parameters<typeof recommendPairs>[0]['compatibility']
   wearEvents: WearEvent[]
+  soloWearEvents: SoloWearEvent[]
   impliedCompatibility: boolean
   roleLabels: RoleLabels
   cursor: number
@@ -268,12 +273,13 @@ function RecommendationCard({
       items,
       compatibility,
       wearEvents,
+      soloWearEvents,
       categoryIds: [category.id!],
       impliedCompatibility,
     })
     // `seed` deliberately re-rolls the ranking when the user asks for another pair.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, compatibility, wearEvents, category.id, impliedCompatibility, seed])
+  }, [items, compatibility, wearEvents, soloWearEvents, category.id, impliedCompatibility, seed])
 
   if (result.candidates.length === 0) {
     const copy = failureCopy(result.reason, roleLabels)

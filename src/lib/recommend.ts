@@ -1,4 +1,10 @@
-import type { ClothingItem, Compatibility, RoleLabels, WearEvent } from '../db/types'
+import type {
+  ClothingItem,
+  Compatibility,
+  RoleLabels,
+  SoloWearEvent,
+  WearEvent,
+} from '../db/types'
 import { pairKey } from '../db/types'
 import { todayKey } from './dates'
 
@@ -29,25 +35,39 @@ export interface EngineInput {
   items: ClothingItem[]
   compatibility: Compatibility[]
   wearEvents: WearEvent[]
+  /** Item-only wears (past-wear import). They count toward an item's recent usage;
+   *  they carry no pair, so pair history ignores them. */
+  soloWearEvents?: SoloWearEvent[]
   categoryIds: number[]
   impliedCompatibility: boolean
   /** Mild penalty for categories already worn today, so a day flows between contexts. */
   penaliseCategoriesUsedToday?: boolean
 }
 
-const W_ITEM_RECENCY = 0.3
-const W_ITEM_USAGE = 0.25
-const W_PAIR_USAGE = 0.2
+const W_ITEM_RECENCY = 0.45
+const W_ITEM_USAGE = 0.2
 const W_PAIR_RECENCY = 0.2
+const W_PAIR_USAGE = 0.1
 const W_JITTER = 0.05
-const RECENCY_HORIZON_DAYS = 30
-const PAIR_RECENCY_HORIZON_DAYS = 21
+/** Recency keeps rising up to this many days, so a long-forgotten item still
+ *  outranks one rested for only a month. */
+const RECENCY_HORIZON_DAYS = 180
+/** Usage counts wears inside this window, not over the item's lifetime, so heavy
+ *  old history does not bench an item and a new one does not chase its count. */
+const USAGE_WINDOW_DAYS = 90
+const INNERWEAR_RECENCY_HORIZON_DAYS = 30
+const DAY_MS = 86400000
 
 const dayGap = (ts: number | undefined, now: number) =>
-  ts === undefined ? Infinity : (now - ts) / 86400000
+  ts === undefined ? Infinity : (now - ts) / DAY_MS
 
 const cap = (gap: number, horizon: number) =>
   gap === Infinity ? 1 : Math.min(gap, horizon) / horizon
+
+/** 0 for worn just now, 1 at the horizon or never worn. Log-shaped so short gaps
+ *  (2 days vs 20) stay far apart while long ones keep climbing slowly. */
+const logRecency = (gap: number, horizon: number) =>
+  gap === Infinity ? 1 : Math.min(1, Math.log1p(Math.max(0, gap)) / Math.log1p(horizon))
 
 export function buildCompatibilityIndex(records: Compatibility[]) {
   const map = new Map<string, boolean>()
@@ -74,6 +94,7 @@ export function recommendPairs(input: EngineInput): RecommendationResult {
     items,
     compatibility,
     wearEvents,
+    soloWearEvents = [],
     categoryIds,
     impliedCompatibility,
     penaliseCategoriesUsedToday,
@@ -104,19 +125,28 @@ export function recommendPairs(input: EngineInput): RecommendationResult {
   const now = Date.now()
   const today = todayKey()
 
-  const pairCount = new Map<string, number>()
+  const windowStart = now - USAGE_WINDOW_DAYS * DAY_MS
+  const itemRecent = new Map<number, number>()
+  const bump = (id: number) => itemRecent.set(id, (itemRecent.get(id) ?? 0) + 1)
+  const pairRecent = new Map<string, number>()
   const pairLast = new Map<string, number>()
   const categoriesUsedToday = new Set<number>()
   for (const e of wearEvents) {
     const k = e.pairKey
-    pairCount.set(k, (pairCount.get(k) ?? 0) + 1)
     pairLast.set(k, Math.max(pairLast.get(k) ?? 0, e.timestamp))
+    if (e.timestamp >= windowStart) {
+      pairRecent.set(k, (pairRecent.get(k) ?? 0) + 1)
+      bump(e.topId)
+      bump(e.bottomId)
+    }
     if (e.date === today && e.categoryId !== undefined) categoriesUsedToday.add(e.categoryId)
   }
+  for (const e of soloWearEvents) if (e.timestamp >= windowStart) bump(e.itemId)
 
-  const maxWearTop = Math.max(1, ...tops.map((t) => t.lifetimeWears))
-  const maxWearBottom = Math.max(1, ...bottoms.map((b) => b.lifetimeWears))
-  const maxPairCount = Math.max(1, ...pairCount.values())
+  const recentWears = (i: ClothingItem) => itemRecent.get(i.id!) ?? 0
+  const maxRecentTop = Math.max(1, ...tops.map(recentWears))
+  const maxRecentBottom = Math.max(1, ...bottoms.map(recentWears))
+  const maxPairRecent = Math.max(1, ...pairRecent.values())
 
   const candidates: PairCandidate[] = []
   for (const top of tops) {
@@ -129,13 +159,13 @@ export function recommendPairs(input: EngineInput): RecommendationResult {
 
       const k = pairKey(top.id!, bottom.id!)
       const itemRecency =
-        (cap(dayGap(top.lastWornAt, now), RECENCY_HORIZON_DAYS) +
-          cap(dayGap(bottom.lastWornAt, now), RECENCY_HORIZON_DAYS)) /
+        (logRecency(dayGap(top.lastWornAt, now), RECENCY_HORIZON_DAYS) +
+          logRecency(dayGap(bottom.lastWornAt, now), RECENCY_HORIZON_DAYS)) /
         2
       const itemUsage =
-        (1 - top.lifetimeWears / maxWearTop + (1 - bottom.lifetimeWears / maxWearBottom)) / 2
-      const pairUsage = 1 - (pairCount.get(k) ?? 0) / maxPairCount
-      const pairRecency = cap(dayGap(pairLast.get(k), now), PAIR_RECENCY_HORIZON_DAYS)
+        (1 - recentWears(top) / maxRecentTop + (1 - recentWears(bottom) / maxRecentBottom)) / 2
+      const pairUsage = 1 - (pairRecent.get(k) ?? 0) / maxPairRecent
+      const pairRecency = logRecency(dayGap(pairLast.get(k), now), RECENCY_HORIZON_DAYS)
 
       const base =
         W_ITEM_RECENCY * itemRecency +
@@ -186,7 +216,7 @@ export function recommendInnerwear(
     .map((item) => ({
       item,
       score:
-        0.45 * cap(dayGap(item.lastWornAt, now), RECENCY_HORIZON_DAYS) +
+        0.45 * cap(dayGap(item.lastWornAt, now), INNERWEAR_RECENCY_HORIZON_DAYS) +
         0.45 * (1 - item.lifetimeWears / maxWear) +
         0.1 * Math.random(),
     }))

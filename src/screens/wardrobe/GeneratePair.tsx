@@ -10,6 +10,7 @@ import {
   useItems,
   useRoleLabels,
   useSettings,
+  useSoloWearEvents,
   useWearEvents,
 } from '../../lib/hooks'
 import { failureCopy, recommendPairs } from '../../lib/recommend'
@@ -21,6 +22,7 @@ export function GeneratePair() {
   const categories = useCategories()
   const compatibility = useCompatibility()
   const wearEvents = useWearEvents()
+  const soloWearEvents = useSoloWearEvents()
   const settings = useSettings()
   const roleLabels = useRoleLabels()
   const toast = useToast()
@@ -31,17 +33,26 @@ export function GeneratePair() {
   const [busy, setBusy] = useState(false)
 
   const result = useMemo(() => {
-    if (!items || !compatibility || !wearEvents || !settings || categoryId === undefined) return null
+    if (
+      !items ||
+      !compatibility ||
+      !wearEvents ||
+      !soloWearEvents ||
+      !settings ||
+      categoryId === undefined
+    )
+      return null
     void seed
     return recommendPairs({
       items,
       compatibility,
       wearEvents,
+      soloWearEvents,
       categoryIds: [categoryId],
       impliedCompatibility: settings.impliedCompatibility,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, compatibility, wearEvents, settings, categoryId, seed])
+  }, [items, compatibility, wearEvents, soloWearEvents, settings, categoryId, seed])
 
   const pick =
     result && result.candidates.length > 0
