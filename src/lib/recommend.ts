@@ -186,8 +186,8 @@ export function recommendInnerwear(
     .map((item) => ({
       item,
       score:
-        0.45 * cap(dayGap(item.lastWornAt, now), RECENCY_HORIZON_DAYS) +
-        0.45 * (1 - item.lifetimeWears / maxWear) +
+        0.8 * cap(dayGap(item.lastWornAt, now), RECENCY_HORIZON_DAYS) +
+        0.1 * (1 - item.lifetimeWears / maxWear) +
         0.1 * Math.random(),
     }))
     .sort((a, b) => b.score - a.score)
