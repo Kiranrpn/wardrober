@@ -55,14 +55,10 @@ const RECENCY_HORIZON_DAYS = 180
 /** Usage counts wears inside this window, not over the item's lifetime, so heavy
  *  old history does not bench an item and a new one does not chase its count. */
 const USAGE_WINDOW_DAYS = 90
-const INNERWEAR_RECENCY_HORIZON_DAYS = 30
 const DAY_MS = 86400000
 
 const dayGap = (ts: number | undefined, now: number) =>
   ts === undefined ? Infinity : (now - ts) / DAY_MS
-
-const cap = (gap: number, horizon: number) =>
-  gap === Infinity ? 1 : Math.min(gap, horizon) / horizon
 
 /** 0 for worn just now, 1 at the horizon or never worn. Log-shaped so short gaps
  *  (2 days vs 20) stay far apart while long ones keep climbing slowly. */
@@ -200,27 +196,43 @@ export function recommendPairs(input: EngineInput): RecommendationResult {
 
 export interface InnerwearCandidate {
   item: ClothingItem
+  /** Days waited since this item was last worn, and the whole of the ordering.
+   *  Infinity for something never worn. Higher goes first. */
   score: number
 }
 
+/** Essentials rotate; they are not scored. Items in this role are near enough
+ *  interchangeable that the only useful question is which available one has
+ *  waited longest, and a weighted score can only ever approximate that answer.
+ *  Weighting by lifetime wears actively got it wrong: normalising against the
+ *  busiest item in the pool left a new essential ahead of everything else until
+ *  its own count caught up, so three new ones would rotate among themselves for
+ *  weeks while older ones sat clean and idle.
+ *
+ *  Derived on every call, never stored. An item in the wash is simply absent
+ *  from the pool and rejoins the rotation in its rightful place when it returns,
+ *  with no cursor to advance and nothing a reversal could leave stale.
+ *
+ *  `events` is unused. `lastWornAt` already reflects pair, solo and essentials
+ *  records alike, and undoing any of them recomputes it from the rest, so the
+ *  item rows are the whole truth here. The parameter is kept so the call in
+ *  Today stays untouched. */
 export function recommendInnerwear(
   items: ClothingItem[],
   events: { itemId: number; timestamp: number }[],
 ): InnerwearCandidate[] {
+  void events
   const pool = items.filter((i) => i.role === 'INNERWEAR' && i.state === 'AVAILABLE')
   if (pool.length === 0) return []
   const now = Date.now()
-  const maxWear = Math.max(1, ...pool.map((i) => i.lifetimeWears))
-  void events
   return pool
-    .map((item) => ({
-      item,
-      score:
-        0.45 * cap(dayGap(item.lastWornAt, now), INNERWEAR_RECENCY_HORIZON_DAYS) +
-        0.45 * (1 - item.lifetimeWears / maxWear) +
-        0.1 * Math.random(),
-    }))
-    .sort((a, b) => b.score - a.score)
+    .map((item) => ({ item, score: dayGap(item.lastWornAt, now) }))
+    .sort((a, b) => {
+      // Never-worn items share an infinite wait, so they are separated by id
+      // rather than by subtracting one infinity from another.
+      if (a.score !== b.score) return b.score - a.score
+      return (a.item.id ?? 0) - (b.item.id ?? 0)
+    })
 }
 
 /** Copy is built from the user's own role names rather than hardcoded words. */
