@@ -8,32 +8,65 @@ export class WearError extends Error {}
 /** Reversals recompute last-worn across every kind of record, so any transaction
  *  that reverses one has to hold all of them. */
 const eventTx = <T>(body: () => Promise<T>) =>
-  db.transaction('rw', db.items, db.wearEvents, db.soloWearEvents, db.innerwearEvents, body)
+  db.transaction(
+    'rw',
+    db.items,
+    db.wearEvents,
+    db.soloWearEvents,
+    db.innerwearEvents,
+    db.washEvents,
+    body,
+  )
+
+/** Noon on an ISO day: the timestamp given to a wear logged for a past date,
+ *  where the real time of day is unknown. */
+export const noonOf = (date: string) => new Date(date + 'T12:00:00').getTime()
+
+/** Now for today, noon for any other day. */
+const stampFor = (date: string) => (date === todayKey() ? Date.now() : noonOf(date))
+
+/** A wear belongs to the item's current laundry cycle only if it happened after
+ *  the last recorded wash. A wear logged today always does; a backdated one from
+ *  before the wash was already cleaned away, so it must neither raise the counter
+ *  when recorded nor lower it when deleted. */
+async function inCurrentCycle(itemId: number, timestamp: number) {
+  const washes = await db.washEvents.where('itemId').equals(itemId).toArray()
+  return washes.every((w) => w.timestamp < timestamp)
+}
 
 interface RecordWearArgs {
   topId: number
   bottomId: number
   categoryId?: number
   source: WearSource
-  /** ISO day; defaults to today. Historical import supplies past days. */
+  /** ISO day; defaults to today. A past day without `historical` is a backdated
+   *  wear: it still counts towards laundry unless the item was washed since. */
   date?: string
   timestamp?: number
-  /** Past-dated records skip the availability guard and the laundry counter:
-   *  those clothes have already been through the wash since. */
+  /** Bulk import of old history: skips the availability guard and never touches
+   *  the laundry counter. */
   historical?: boolean
 }
 
-function applyWear(
+/** Whether an item's current state stops it being worn. Only today's wears are
+ *  checked: an item in repair now may well have been worn last week. */
+function assertWearable(item: ClothingItem, date: string, historical?: boolean) {
+  if (historical || date < todayKey()) return
+  if (item.state === 'RETIRED') throw new WearError(`${item.name} is retired.`)
+  if (item.state === 'REPAIR') throw new WearError(`${item.name} is under repair.`)
+}
+
+async function applyWear(
   item: ClothingItem,
   timestamp: number,
   historical = false,
-): Partial<ClothingItem> {
+): Promise<Partial<ClothingItem>> {
   const base = {
     lifetimeWears: item.lifetimeWears + 1,
     lastWornAt: Math.max(item.lastWornAt ?? 0, timestamp),
     updatedAt: Date.now(),
   }
-  if (historical) return base
+  if (historical || !(await inCurrentCycle(item.id!, timestamp))) return base
 
   const wearsSinceLaundry = item.wearsSinceLaundry + 1
   const reachedThreshold = item.laundryThreshold > 0 && wearsSinceLaundry >= item.laundryThreshold
@@ -47,22 +80,17 @@ function applyWear(
 /** Single atomic transaction, per spec §45: validate, log, increment both items,
  *  update laundry counters and roll qualifying items into LAUNDRY. */
 export async function recordWear(args: RecordWearArgs) {
-  const timestamp = args.timestamp ?? Date.now()
+  const timestamp = args.timestamp ?? (args.date ? stampFor(args.date) : Date.now())
   const date = args.date ?? todayKey(new Date(timestamp))
 
-  return db.transaction('rw', db.items, db.wearEvents, async () => {
+  return db.transaction('rw', db.items, db.wearEvents, db.washEvents, async () => {
     const top = await db.items.get(args.topId)
     const bottom = await db.items.get(args.bottomId)
     if (!top || !bottom) throw new WearError('That item no longer exists.')
     if (top.role !== 'TOP') throw new WearError(`${top.name} is not a top.`)
     if (bottom.role !== 'BOTTOM') throw new WearError(`${bottom.name} is not a bottom.`)
 
-    if (!args.historical) {
-      for (const i of [top, bottom]) {
-        if (i.state === 'RETIRED') throw new WearError(`${i.name} is retired.`)
-        if (i.state === 'REPAIR') throw new WearError(`${i.name} is under repair.`)
-      }
-    }
+    for (const i of [top, bottom]) assertWearable(i, date, args.historical)
 
     await db.wearEvents.add({
       date,
@@ -74,8 +102,8 @@ export async function recordWear(args: RecordWearArgs) {
       pairKey: pairKey(top.id!, bottom.id!),
     })
 
-    await db.items.update(top.id!, applyWear(top, timestamp, args.historical))
-    await db.items.update(bottom.id!, applyWear(bottom, timestamp, args.historical))
+    await db.items.update(top.id!, await applyWear(top, timestamp, args.historical))
+    await db.items.update(bottom.id!, await applyWear(bottom, timestamp, args.historical))
   })
 }
 
@@ -102,9 +130,15 @@ type EventKind = 'pair' | 'solo' | 'innerwear'
 
 /** The laundry side of a reversal. An imported wear never touched the laundry
  *  counter (see applyWear), so undoing one must not decrement it either: doing so
- *  is what let counts drift below the event log. */
-function reverseLaundry(item: ClothingItem, historical: boolean): Partial<ClothingItem> {
-  if (historical) return {}
+ *  is what let counts drift below the event log. The same holds for any wear from
+ *  before the item's last wash: that cycle is closed, and the counter now belongs
+ *  to wears that came after it. */
+async function reverseLaundry(
+  item: ClothingItem,
+  event: { timestamp: number; source: WearSource },
+): Promise<Partial<ClothingItem>> {
+  if (event.source === 'HISTORICAL_IMPORT') return {}
+  if (!(await inCurrentCycle(item.id!, event.timestamp))) return {}
   const wearsSinceLaundry = Math.max(0, item.wearsSinceLaundry - 1)
   const freed =
     item.state === 'LAUNDRY' && item.laundryThreshold > 0 && wearsSinceLaundry < item.laundryThreshold
@@ -122,7 +156,7 @@ async function reverseWear(itemId: number, event: WearEvent) {
   await db.items.update(itemId, {
     lifetimeWears: Math.max(0, item.lifetimeWears - 1),
     lastWornAt: await recomputeLastWorn(itemId, { kind: 'pair', id: event.id }),
-    ...reverseLaundry(item, event.source === 'HISTORICAL_IMPORT'),
+    ...(await reverseLaundry(item, event)),
     updatedAt: Date.now(),
   })
 }
@@ -147,19 +181,21 @@ async function reverseInnerwear(itemId: number, event: InnerwearWearEvent) {
   await db.items.update(itemId, {
     lifetimeWears: Math.max(0, item.lifetimeWears - 1),
     lastWornAt: await recomputeLastWorn(itemId, { kind: 'innerwear', id: event.id }),
-    ...reverseLaundry(item, event.source === 'HISTORICAL_IMPORT'),
+    ...(await reverseLaundry(item, event)),
     updatedAt: Date.now(),
   })
 }
 
 /** Sets (or swaps) the day's single innerwear record in one transaction, so the
- *  outgoing item is fully reversed before the new one is counted. */
+ *  outgoing item is fully reversed before the new one is counted. A past `date`
+ *  is stamped at noon of that day and counts towards laundry like any other
+ *  backdated wear. */
 export async function setTodaysInnerwear(
   itemId: number,
   source: WearSource = 'TODAY_RECOMMENDATION',
   date = todayKey(),
 ) {
-  const timestamp = Date.now()
+  const timestamp = stampFor(date)
   return eventTx(async () => {
     const item = await db.items.get(itemId)
     if (!item) throw new WearError('That item no longer exists.')
@@ -174,7 +210,7 @@ export async function setTodaysInnerwear(
 
     const fresh = await db.items.get(itemId)
     await db.innerwearEvents.add({ date, timestamp, itemId, source })
-    await db.items.update(itemId, applyWear(fresh!, timestamp))
+    await db.items.update(itemId, await applyWear(fresh!, timestamp))
     return true
   })
 }
@@ -240,7 +276,7 @@ export async function recordHistoricalInnerwear(args: {
       itemId: args.itemId,
       source: 'HISTORICAL_IMPORT',
     })
-    await db.items.update(args.itemId, applyWear(item, args.timestamp, true))
+    await db.items.update(args.itemId, await applyWear(item, args.timestamp, true))
     return true
   })
 }
@@ -257,19 +293,16 @@ export async function recordSoloWear(args: {
   /** Past-dated records skip the availability guard and the laundry counter. */
   historical?: boolean
 }) {
-  const timestamp = args.timestamp ?? Date.now()
+  const timestamp = args.timestamp ?? (args.date ? stampFor(args.date) : Date.now())
   const date = args.date ?? todayKey(new Date(timestamp))
 
-  return db.transaction('rw', db.items, db.soloWearEvents, async () => {
+  return db.transaction('rw', db.items, db.soloWearEvents, db.washEvents, async () => {
     const item = await db.items.get(args.itemId)
     if (!item) throw new WearError('That item no longer exists.')
-    if (!args.historical) {
-      if (item.state === 'RETIRED') throw new WearError(`${item.name} is retired.`)
-      if (item.state === 'REPAIR') throw new WearError(`${item.name} is under repair.`)
-    }
+    assertWearable(item, date, args.historical)
 
     await db.soloWearEvents.add({ date, timestamp, itemId: args.itemId, source: args.source })
-    await db.items.update(args.itemId, applyWear(item, timestamp, args.historical))
+    await db.items.update(args.itemId, await applyWear(item, timestamp, args.historical))
   })
 }
 
@@ -282,7 +315,7 @@ export async function undoSoloWear(eventId: number) {
       await db.items.update(event.itemId, {
         lifetimeWears: Math.max(0, item.lifetimeWears - 1),
         lastWornAt: await recomputeLastWorn(event.itemId, { kind: 'solo', id: event.id }),
-        ...reverseLaundry(item, event.source === 'HISTORICAL_IMPORT'),
+        ...(await reverseLaundry(item, event)),
         updatedAt: Date.now(),
       })
     }

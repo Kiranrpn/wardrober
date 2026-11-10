@@ -5,7 +5,13 @@ import type { ClothingItem, SystemRole } from '../../db/types'
 import { ROLES } from '../../db/types'
 import { todayKey } from '../../lib/dates'
 import { useCategories, useItems, useRoleLabels } from '../../lib/hooks'
-import { recordHistoricalInnerwear, recordSoloWear, recordWear, WearError } from '../../lib/wear'
+import {
+  noonOf,
+  recordHistoricalInnerwear,
+  recordSoloWear,
+  recordWear,
+  WearError,
+} from '../../lib/wear'
 import { ScreenHeader } from '../wardrobe/ScreenHeader'
 
 const WEEK_MS = 7 * 86400000
@@ -29,7 +35,25 @@ export function HistoricalImport() {
   const [busy, setBusy] = useState(false)
 
   const pool = useMemo(() => (items ?? []).filter((i) => i.state !== 'RETIRED'), [items])
-  const byRole = (role: SystemRole) => pool.filter((i) => i.role === role)
+  // Essentials carry no category, so the filter never hides them.
+  const byRole = (role: SystemRole) =>
+    pool.filter(
+      (i) =>
+        i.role === role &&
+        (role === 'INNERWEAR' || categoryId === undefined || i.categoryIds.includes(categoryId)),
+    )
+  const shownCount = ROLES.reduce((n, role) => n + byRole(role).length, 0)
+
+  /** Narrows both modes to one category. A pair selection the new category hides
+   *  is dropped rather than imported unseen; item-by-item counts are kept, since
+   *  the button always shows the full total about to be imported. */
+  function pickCategory(id: number | undefined) {
+    setCategoryId(id)
+    const hidden = (itemId?: number) =>
+      id !== undefined && !pool.find((i) => i.id === itemId)?.categoryIds.includes(id)
+    if (hidden(topId)) setTopId(undefined)
+    if (hidden(bottomId)) setBottomId(undefined)
+  }
 
   const hasPair = topId !== undefined && bottomId !== undefined
   const halfPair = (topId === undefined) !== (bottomId === undefined)
@@ -42,14 +66,12 @@ export function HistoricalImport() {
       ? !halfPair && (hasPair || innerId !== undefined)
       : entered.length > 0
 
-  const anchorOf = (date: string) => new Date(date + 'T12:00:00').getTime()
-
   /** Every item the user gave a number to, each spread back one week at a time
    *  from the same date. No pair is invented for them: an item worn on its own is
    *  recorded on its own, so pair statistics stay a record of real outfits. */
   async function submitIndividual() {
     setBusy(true)
-    const anchor = anchorOf(lastWorn)
+    const anchor = noonOf(lastWorn)
     let written = 0
     try {
       for (const [id, times] of entered) {
@@ -81,7 +103,7 @@ export function HistoricalImport() {
 
   async function submitPair() {
     setBusy(true)
-    const anchor = anchorOf(lastWorn)
+    const anchor = noonOf(lastWorn)
     let pairs = 0
     let inner = 0
     let skipped = 0
@@ -180,6 +202,22 @@ export function HistoricalImport() {
           like reality. Laundry counters are left alone.
         </div>
 
+        <div className="field">
+          <label>Category</label>
+          <div className="scroller">
+            {(categories ?? []).map((c) => (
+              <button
+                key={c.id}
+                className={`chip ${categoryId === c.id ? 'on' : ''}`}
+                aria-pressed={categoryId === c.id}
+                onClick={() => pickCategory(categoryId === c.id ? undefined : c.id)}
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {mode === 'INDIVIDUAL' ? (
           <>
             {ROLES.map((role) => {
@@ -201,27 +239,16 @@ export function HistoricalImport() {
                 </div>
               )
             })}
-            {pool.length === 0 && (
+            {pool.length === 0 ? (
               <div className="card small muted">Add some clothes first.</div>
+            ) : (
+              shownCount === 0 && (
+                <div className="card small muted">Nothing in this category yet.</div>
+              )
             )}
           </>
         ) : (
           <>
-            <div className="field">
-              <label>Category</label>
-              <div className="scroller">
-                {(categories ?? []).map((c) => (
-                  <button
-                    key={c.id}
-                    className={`chip ${categoryId === c.id ? 'on' : ''}`}
-                    onClick={() => setCategoryId(categoryId === c.id ? undefined : c.id)}
-                  >
-                    {c.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             <Picker label={roleLabels.TOP} items={byRole('TOP')} value={topId} onChange={setTopId} />
             <Picker
               label={roleLabels.BOTTOM}

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useToast } from '../components/toast'
 import { Thumb } from '../components/ui'
 import type { ClothingItem } from '../db/types'
-import { todayKey } from '../lib/dates'
+import { formatDate, todayKey } from '../lib/dates'
 import { useCategories, useInnerwearEvents, useItems, useRoleLabels } from '../lib/hooks'
 import { recordWear, setTodaysInnerwear, WearError } from '../lib/wear'
 
@@ -13,6 +13,7 @@ export function LogWhatIWore({ onDone }: { onDone: () => void }) {
   const roleLabels = useRoleLabels()
   const toast = useToast()
 
+  const [date, setDate] = useState(todayKey())
   const [categoryId, setCategoryId] = useState<number | undefined>()
   const [topId, setTopId] = useState<number | undefined>()
   const [bottomId, setBottomId] = useState<number | undefined>()
@@ -27,14 +28,26 @@ export function LogWhatIWore({ onDone }: { onDone: () => void }) {
   // Innerwear carries no category, so it is never filtered by the chips above.
   const inners = pool.filter((i) => i.role === 'INNERWEAR')
 
-  const loggedToday = (innerwearEvents ?? []).find((e) => e.date === todayKey())
-  const alreadyLogged = loggedToday
-    ? items?.find((i) => i.id === loggedToday.itemId)
+  const isToday = date === todayKey()
+  const dayLabel = isToday ? 'today' : formatDate(date)
+  const loggedThatDay = (innerwearEvents ?? []).find((e) => e.date === date)
+  const alreadyLogged = loggedThatDay
+    ? items?.find((i) => i.id === loggedThatDay.itemId)
     : undefined
+
+  /** A selection the new category hides would still be recorded, unseen. */
+  function pickCategory(id: number | undefined) {
+    setCategoryId(id)
+    const hidden = (itemId?: number) =>
+      id !== undefined && !pool.find((i) => i.id === itemId)?.categoryIds.includes(id)
+    if (hidden(topId)) setTopId(undefined)
+    if (hidden(bottomId)) setBottomId(undefined)
+  }
 
   const hasPair = topId !== undefined && bottomId !== undefined
   const halfPair = (topId === undefined) !== (bottomId === undefined)
-  const canSubmit = !busy && !halfPair && (hasPair || innerId !== undefined)
+  const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= todayKey()
+  const canSubmit = !busy && validDate && !halfPair && (hasPair || innerId !== undefined)
 
   async function submit() {
     if (!canSubmit) return
@@ -42,14 +55,24 @@ export function LogWhatIWore({ onDone }: { onDone: () => void }) {
     const done: string[] = []
     try {
       if (hasPair) {
-        await recordWear({ topId: topId!, bottomId: bottomId!, categoryId, source: 'MANUAL' })
+        await recordWear({
+          topId: topId!,
+          bottomId: bottomId!,
+          categoryId,
+          source: 'MANUAL',
+          date,
+        })
         done.push('outfit')
       }
       if (innerId !== undefined) {
-        const changed = await setTodaysInnerwear(innerId, 'MANUAL')
+        const changed = await setTodaysInnerwear(innerId, 'MANUAL', date)
         if (changed) done.push(roleLabels.INNERWEAR.toLowerCase())
       }
-      toast(done.length > 0 ? `Recorded ${done.join(' and ')}.` : 'Nothing changed.')
+      toast(
+        done.length > 0
+          ? `Recorded ${done.join(' and ')}${isToday ? '' : ` for ${dayLabel}`}.`
+          : 'Nothing changed.',
+      )
       onDone()
     } catch (e) {
       toast(e instanceof WearError ? e.message : 'Could not record that wear.', true)
@@ -61,13 +84,30 @@ export function LogWhatIWore({ onDone }: { onDone: () => void }) {
   return (
     <div className="stack">
       <div className="field">
+        <label htmlFor="log-wear-date">Worn on</label>
+        <input
+          id="log-wear-date"
+          type="date"
+          value={date}
+          max={todayKey()}
+          onChange={(e) => setDate(e.target.value)}
+        />
+        {!isToday && validDate && (
+          <div className="tiny faint">
+            A past day still counts towards laundry, unless the item has been washed since. For
+            older history that should leave laundry alone, use Import past wears in Profile.
+          </div>
+        )}
+      </div>
+
+      <div className="field">
         <label>Category</label>
         <div className="scroller">
           {(categories ?? []).map((c) => (
             <button
               key={c.id}
               className={`chip ${categoryId === c.id ? 'on' : ''}`}
-              onClick={() => setCategoryId(categoryId === c.id ? undefined : c.id)}
+              onClick={() => pickCategory(categoryId === c.id ? undefined : c.id)}
             >
               {c.name}
             </button>
@@ -84,7 +124,7 @@ export function LogWhatIWore({ onDone }: { onDone: () => void }) {
         onChange={setInnerId}
         note={
           alreadyLogged
-            ? `${alreadyLogged.name} is logged for today. Picking another swaps it.`
+            ? `${alreadyLogged.name} is logged for ${dayLabel}. Picking another swaps it.`
             : undefined
         }
       />
